@@ -4,6 +4,7 @@
    T1.3: Anton self-hosted font + display view full-screen sizing.
    T1.4: Zoom-in animation using transform: scale().
    T1.5: Navigation — tap-to-replay, back clears textarea, no text selection.
+   T3.3: Mobile UX polish — safe areas, overscroll, pinch-zoom, keyboard.
    ===================================================================== */
 
 /* ----- Anton self-hosted font ---------------------------------------- */
@@ -33,6 +34,9 @@ body {
   /* Adapt to system dark/light preference */
   background-color: #ffffff;
   color: #000000;
+
+  /* Disable pull-to-refresh and bounce-scroll globally (T3.3). */
+  overscroll-behavior: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -80,10 +84,12 @@ body {
 /*
  * #view-display overrides the generic .view.active layout so it acts as a
  * plain full-viewport container with no extra padding or flex gap.
+ * Safe-area padding keeps content clear of the notch and home indicator
+ * when viewport-fit=cover is set (T3.3).
  */
 #view-display.active {
   display: block;
-  padding: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   gap: 0;
 
   /* Dark mode default (overridden below for light mode) */
@@ -107,12 +113,16 @@ body {
 }
 
 #display-text {
-  /* Fill the full viewport; JS will set font-size dynamically */
+  /*
+   * Fill the safe viewport area; JS will set font-size dynamically.
+   * env() insets keep text clear of the notch and home indicator on
+   * devices where viewport-fit=cover extends the layout edge-to-edge (T3.3).
+   */
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  top: env(safe-area-inset-top);
+  left: env(safe-area-inset-left);
+  width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right));
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow: hidden;
 
   /* Anton display font */

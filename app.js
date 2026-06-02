@@ -7,6 +7,7 @@
  * T2.1: Screen Wake Lock — keeps the screen on while in display mode.
  * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
  * T2.3: Long press + share — triggers Web Share API (or download fallback) on long press.
+ * T3.3: Mobile UX polish — blur keyboard before entering display mode.
  */
 
 'use strict';
@@ -312,6 +313,10 @@ function navigateToDisplay() {
 
   displayText.textContent = currentText;
   console.log('Embiggen: text passed to display →', currentText);
+
+  // Dismiss the on-screen keyboard before the display view appears so it
+  // doesn't linger over the embiggened text on mobile (T3.3).
+  inputText.blur();
 
   showView(viewDisplay);
   acquireWakeLock();
