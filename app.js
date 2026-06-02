@@ -4,6 +4,7 @@
  * T1.3: Display mode — Anton font, binary-search font sizing, resize handling.
  * T1.4: Zoom-in animation — scale from tiny to full on display entry.
  * T1.5: Navigation — back clears textarea, tap replays animation, long-press stub.
+ * T2.1: Screen Wake Lock — keeps the screen on while in display mode.
  */
 
 'use strict';
@@ -14,6 +15,14 @@
 
 /** Text entered by the user on the home view. */
 let currentText = '';
+
+/**
+ * The active WakeLockSentinel, or null when no wake lock is held.
+ * Browsers automatically release the sentinel when the page is hidden;
+ * we re-acquire it on visibilitychange (see DOMContentLoaded below).
+ * @type {WakeLockSentinel|null}
+ */
+let wakeLockSentinel = null;
 
 // ---------------------------------------------------------------------------
 // DOM references — resolved after DOMContentLoaded
@@ -96,6 +105,38 @@ function playZoomAnimation() {
   displayText.classList.add('zoom-in');
 }
 
+// ---------------------------------------------------------------------------
+// Screen Wake Lock (T2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request a screen wake lock and store the sentinel.
+ * Silent no-op if the API is unsupported or the request is denied.
+ */
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+  } catch (_err) {
+    // Permission denied or API unavailable — continue without wake lock.
+  }
+}
+
+/**
+ * Release the active wake lock sentinel, if any.
+ * Silent no-op if none is held or the release fails.
+ */
+async function releaseWakeLock() {
+  if (!wakeLockSentinel) return;
+  try {
+    await wakeLockSentinel.release();
+  } catch (_err) {
+    // Release failed — nothing useful we can do.
+  } finally {
+    wakeLockSentinel = null;
+  }
+}
+
 /** Navigate from home → display. */
 function navigateToDisplay() {
   currentText = inputText.value.trim();
@@ -112,6 +153,7 @@ function navigateToDisplay() {
   console.log('Embiggen: text passed to display →', currentText);
 
   showView(viewDisplay);
+  acquireWakeLock();
 
   // fitTextToDisplay() must run before the animation so the font size is
   // already correct at the start of the scale — the animation only transforms
@@ -131,6 +173,7 @@ function navigateToDisplay() {
 
 /** Navigate from display → home (no new history entry needed). */
 function navigateToHome() {
+  releaseWakeLock();
   // Clear the textarea so the user starts fresh for their next message.
   inputText.value = '';
   showView(viewHome);
@@ -242,6 +285,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Gesture was interrupted (e.g. browser scroll, incoming call).
     // Cancel the long-press timer; do not trigger tap or long-press actions.
     cancelTapTimer();
+  });
+
+  // -------------------------------------------------------------------------
+  // Wake lock re-acquisition on foreground (T2.1)
+  //
+  // The browser automatically releases the sentinel when the page is hidden.
+  // Re-acquire it when the page becomes visible again, but only while the
+  // display view is still active.
+  // -------------------------------------------------------------------------
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && viewDisplay.classList.contains('active')) {
+      acquireWakeLock();
+    }
   });
 
   // Recalculate font size on viewport changes (rotation, resize).
