@@ -477,4 +477,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Start on home view (the CSS default; this call is defensive).
   showView(viewHome);
+
+  // -------------------------------------------------------------------------
+  // Service Worker registration (T3.2)
+  //
+  // Registers sw.js to enable offline support via Cache API.
+  // The guard prevents errors in browsers that don't support service workers
+  // (e.g. some older WebViews, file:// origins).
+  // -------------------------------------------------------------------------
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
 });
