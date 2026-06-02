@@ -88,6 +88,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Wire up the Embiggen button.
   btnEmbiggen.addEventListener('click', navigateToDisplay);
 
+  // Enter (without Shift) on the textarea triggers Embiggen, matching the
+  // button click. Shift+Enter inserts a newline as normal.
+  inputText.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      navigateToDisplay();
+    }
+  });
+
   // Handle browser back button while in display view.
   window.addEventListener('popstate', () => {
     // When the user presses back from display view, history.state will no
