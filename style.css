@@ -3,6 +3,7 @@
    T1.1: Scaffolding placeholders. Visual polish comes in later tickets.
    T1.3: Anton self-hosted font + display view full-screen sizing.
    T1.4: Zoom-in animation using transform: scale().
+   T1.5: Navigation — tap-to-replay, back clears textarea, no text selection.
    ===================================================================== */
 
 /* ----- Anton self-hosted font ---------------------------------------- */
@@ -88,6 +89,14 @@ body {
   /* Dark mode default (overridden below for light mode) */
   background-color: #000000;
   color: #ffffff;
+
+  /*
+   * Prevent the browser's default text-selection behaviour during tap and
+   * long-press gestures. Without this, a long press triggers a selection
+   * highlight that visually clashes with the share flow (T2.3).
+   */
+  user-select: none;
+  -webkit-user-select: none; /* Safari / iOS */
 }
 
 @media (prefers-color-scheme: light) {
