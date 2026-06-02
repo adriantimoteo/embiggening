@@ -4,6 +4,7 @@
  * T1.3: Display mode — Anton font, binary-search font sizing, resize handling.
  * T1.4: Zoom-in animation — scale from tiny to full on display entry.
  * T1.5: Navigation — back clears textarea, tap replays animation, long-press stub.
+ * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
  */
 
 'use strict';
@@ -75,6 +76,122 @@ function fitTextToDisplay() {
 
   // Settle on the last known-good (fitting) size.
   displayText.style.fontSize = low + 'px';
+}
+
+// ---------------------------------------------------------------------------
+// Canvas image generation (T2.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the current embiggened text to a canvas and return a PNG Blob.
+ *
+ * The output exactly matches what the user sees on screen:
+ *   - Same Anton font at the same px size calculated by fitTextToDisplay()
+ *   - Same background and text colours (dark/light mode aware)
+ *   - Same manual word-wrap layout, horizontally and vertically centred
+ *   - Scaled by devicePixelRatio for crisp output on retina/HiDPI screens
+ *
+ * @returns {Promise<Blob>} A Promise that resolves to a PNG image Blob.
+ */
+async function generateShareImage() {
+  // Wait for Anton to be fully loaded before drawing, so measureText() and
+  // the actual glyph outlines are both based on the real font metrics.
+  await document.fonts.ready;
+
+  const dpr    = window.devicePixelRatio || 1;
+  const vw     = window.innerWidth;
+  const vh     = window.innerHeight;
+
+  // Read the exact font-size string that fitTextToDisplay() computed,
+  // e.g. "142px". parseInt extracts the numeric pixel value.
+  const fontSizeStr = displayText.style.fontSize; // e.g. "142px"
+  const fontSizePx  = parseInt(fontSizeStr, 10);
+
+  // Determine colours from the system colour-scheme preference.
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const bgColour   = isDark ? '#000000' : '#ffffff';
+  const textColour = isDark ? '#ffffff' : '#000000';
+
+  // Create an off-screen canvas at physical pixel dimensions.
+  const canvas = document.createElement('canvas');
+  canvas.width  = vw * dpr;
+  canvas.height = vh * dpr;
+
+  const ctx = canvas.getContext('2d');
+
+  // Scale the context so all subsequent drawing coordinates are in CSS pixels.
+  ctx.scale(dpr, dpr);
+
+  // Fill background.
+  ctx.fillStyle = bgColour;
+  ctx.fillRect(0, 0, vw, vh);
+
+  // Configure the font — must match the CSS font stack used in #display-text.
+  ctx.font = `${fontSizeStr} Anton`;
+
+  // ---------------------------------------------------------------------------
+  // Manual word wrapping — CSS wraps automatically; canvas does not.
+  // ---------------------------------------------------------------------------
+
+  const words      = currentText.split(' ');
+  const lines      = [];
+  let   currentLine = '';
+
+  for (const word of words) {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    const { width } = ctx.measureText(candidate);
+
+    if (width <= vw) {
+      // Word fits on the current line — append it.
+      currentLine = candidate;
+    } else {
+      // Word doesn't fit.
+      if (currentLine) {
+        // Flush the current line and start a new one with this word.
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        // Single word wider than the canvas — place it on its own line.
+        lines.push(word);
+        currentLine = '';
+      }
+    }
+  }
+
+  // Push any remaining text as the final line.
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text positioning — vertically and horizontally centred.
+  // ---------------------------------------------------------------------------
+
+  const lineHeight    = fontSizePx * 1.15;
+  const totalBlockH   = lines.length * lineHeight;
+  const startY        = (vh - totalBlockH) / 2;
+
+  ctx.fillStyle  = textColour;
+  ctx.textAlign  = 'center';
+  ctx.textBaseline = 'top';
+
+  lines.forEach((line, i) => {
+    ctx.fillText(line, vw / 2, startY + i * lineHeight);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Output — convert the canvas to a PNG Blob via a Promise wrapper.
+  // ---------------------------------------------------------------------------
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error('canvas.toBlob() returned null'));
+      }
+    }, 'image/png');
+  });
 }
 
 // ---------------------------------------------------------------------------
