@@ -53,7 +53,7 @@ body {
   max-width: 480px;
   font-size: 1rem;
   padding: 0.5rem;
-  resize: vertical;
+  resize: none;
 }
 
 #btn-embiggen {
