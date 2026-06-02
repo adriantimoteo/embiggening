@@ -2,6 +2,7 @@
    Embiggen — style.css
    T1.1: Scaffolding placeholders. Visual polish comes in later tickets.
    T1.3: Anton self-hosted font + display view full-screen sizing.
+   T1.4: Zoom-in animation using transform: scale().
    ===================================================================== */
 
 /* ----- Anton self-hosted font ---------------------------------------- */
@@ -115,4 +116,33 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
+
+  /* Scale from this element's own centre point */
+  transform-origin: center center;
+}
+
+/* ----- Zoom-in animation --------------------------------------------- */
+
+/*
+ * Keyframes: start at a very small scale so the text is barely visible,
+ * then expand to full size. Using scale() avoids layout recalculations.
+ */
+@keyframes embiggen-zoom-in {
+  from {
+    transform: scale(0.07);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/*
+ * .zoom-in class is added by JS when entering display mode.
+ * Removing and re-adding the class replays the animation (used by T1.5).
+ * will-change promotes the element to its own compositor layer so the
+ * animation runs off the main thread with no layout jank.
+ */
+.zoom-in {
+  animation: embiggen-zoom-in 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform;
 }
