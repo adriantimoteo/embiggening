@@ -6,6 +6,7 @@
  * T1.5: Navigation — back clears textarea, tap replays animation, long-press stub.
  * T2.1: Screen Wake Lock — keeps the screen on while in display mode.
  * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
+ * T2.3: Long press + share — triggers Web Share API (or download fallback) on long press.
  */
 
 'use strict';
@@ -204,6 +205,49 @@ async function generateShareImage() {
 }
 
 // ---------------------------------------------------------------------------
+// Share (T2.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a PNG image of the current display and share it via the Web Share
+ * API. Falls back to a direct download if the API is unavailable or does not
+ * support file sharing.
+ *
+ * Called from the long-press path in the pointerup handler.
+ */
+async function triggerShare() {
+  let blob;
+  try {
+    blob = await generateShareImage();
+  } catch (_err) {
+    // Image generation failed — nothing useful to share.
+    return;
+  }
+
+  const file = new File([blob], 'embiggen.png', { type: 'image/png' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // User dismissed the share sheet — expected, ignore silently.
+        return;
+      }
+      // Any other share error — fail silently.
+    }
+  } else {
+    // Web Share API unavailable or file sharing not supported — download fallback.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'embiggen.png';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Display mode — animation
 // ---------------------------------------------------------------------------
 
@@ -395,7 +439,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // elapsed 300–499ms: ambiguous zone; treat as neither tap nor long press.
     }
     // If tapTimerId is null here, the 500ms timer already fired → long press.
-    // Do nothing (T2.3 handles this path).
+    else {
+      triggerShare();
+    }
   });
 
   viewDisplay.addEventListener('pointercancel', () => {
