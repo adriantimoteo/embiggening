@@ -2,6 +2,7 @@
  * Embiggen — app.js
  * T1.1: Scaffolding — two-view navigation + text passing foundation.
  * T1.3: Display mode — Anton font, binary-search font sizing, resize handling.
+ * T1.4: Zoom-in animation — scale from tiny to full on display entry.
  */
 
 'use strict';
@@ -75,6 +76,25 @@ function fitTextToDisplay() {
   displayText.style.fontSize = low + 'px';
 }
 
+// ---------------------------------------------------------------------------
+// Display mode — animation
+// ---------------------------------------------------------------------------
+
+/**
+ * Replay the zoom-in animation on #display-text.
+ *
+ * The trick: removing the class, forcing a style recalculation (by reading
+ * offsetWidth), then re-adding it causes the browser to restart the animation
+ * from scratch. T1.5 calls this directly to replay on tap.
+ */
+function playZoomAnimation() {
+  displayText.classList.remove('zoom-in');
+  // Force reflow so the browser registers the class removal before we re-add.
+  // eslint-disable-next-line no-unused-expressions
+  displayText.offsetWidth; // jshint ignore:line
+  displayText.classList.add('zoom-in');
+}
+
 /** Navigate from home → display. */
 function navigateToDisplay() {
   currentText = inputText.value.trim();
@@ -92,10 +112,15 @@ function navigateToDisplay() {
 
   showView(viewDisplay);
 
-  // Size immediately with whatever font is available, then re-size once Anton
-  // is confirmed loaded — guards against font-display:swap causing a mis-size
-  // on first visit before the woff2 has been cached.
+  // fitTextToDisplay() must run before the animation so the font size is
+  // already correct at the start of the scale — the animation only transforms
+  // the already-sized element, it never changes font-size.
   fitTextToDisplay();
+  playZoomAnimation();
+
+  // Re-size once Anton is confirmed loaded (guards against font-display:swap
+  // causing a mis-size on first visit before the woff2 has been cached).
+  // If a resize is needed we replay the animation so the final state matches.
   document.fonts.ready.then(() => {
     if (viewDisplay.classList.contains('active')) {
       fitTextToDisplay();
