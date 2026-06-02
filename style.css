@@ -25,6 +25,7 @@
 html, body {
   height: 100%;
   width: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -137,12 +138,11 @@ body {
  * then expand to full size. Using scale() avoids layout recalculations.
  */
 @keyframes embiggen-zoom-in {
-  from {
-    transform: scale(0.07);
-  }
-  to {
-    transform: scale(1);
-  }
+  0%   { transform: scale(0.07); }
+  70%  { transform: scale(1.08); }
+  83%  { transform: scale(0.96); }
+  93%  { transform: scale(1.03); }
+  100% { transform: scale(1); }
 }
 
 /*
@@ -152,6 +152,6 @@ body {
  * animation runs off the main thread with no layout jank.
  */
 .zoom-in {
-  animation: embiggen-zoom-in 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: embiggen-zoom-in 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform;
 }
