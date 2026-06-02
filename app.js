@@ -3,6 +3,7 @@
  * T1.1: Scaffolding — two-view navigation + text passing foundation.
  * T1.3: Display mode — Anton font, binary-search font sizing, resize handling.
  * T1.4: Zoom-in animation — scale from tiny to full on display entry.
+ * T1.5: Navigation — back clears textarea, tap replays animation, long-press stub.
  */
 
 'use strict';
@@ -130,6 +131,8 @@ function navigateToDisplay() {
 
 /** Navigate from display → home (no new history entry needed). */
 function navigateToHome() {
+  // Clear the textarea so the user starts fresh for their next message.
+  inputText.value = '';
   showView(viewHome);
 }
 
@@ -176,6 +179,69 @@ document.addEventListener('DOMContentLoaded', () => {
     // When the user presses back from display view, history.state will no
     // longer be { view: 'display' }, so we simply return to home.
     navigateToHome();
+  });
+
+  // -------------------------------------------------------------------------
+  // Tap vs long-press detection on the display view (T1.5)
+  //
+  // Rules:
+  //   pointerup within 300ms  → tap  → replay animation
+  //   pointerup after  500ms  → long press → do nothing (T2.3 will hook here)
+  //   pointercancel           → cancel the pending timer, do nothing
+  //
+  // The click event is intentionally NOT used — pointer events give us
+  // precise control over the start time so tap and long press can't conflict.
+  // -------------------------------------------------------------------------
+
+  /** @type {number|null} setTimeout handle for the long-press threshold. */
+  let tapTimerId = null;
+
+  /** Timestamp (ms) when the current pointerdown fired. */
+  let pointerDownAt = 0;
+
+  /**
+   * Cancel the running tap/long-press timer, if any.
+   */
+  function cancelTapTimer() {
+    if (tapTimerId !== null) {
+      clearTimeout(tapTimerId);
+      tapTimerId = null;
+    }
+  }
+
+  viewDisplay.addEventListener('pointerdown', () => {
+    pointerDownAt = Date.now();
+
+    // Set a one-shot timer for the long-press threshold.
+    // When it fires, the press has exceeded 500ms — it's a long press.
+    // For now we just mark the timer as expired so pointerup knows not to
+    // treat a late release as a tap. T2.3 will add the share logic here.
+    tapTimerId = setTimeout(() => {
+      tapTimerId = null; // timer expired — long press in progress
+    }, 500);
+  });
+
+  viewDisplay.addEventListener('pointerup', () => {
+    const elapsed = Date.now() - pointerDownAt;
+
+    if (tapTimerId !== null) {
+      // Timer is still running → pointerup arrived within 500ms window.
+      cancelTapTimer();
+
+      if (elapsed < 300) {
+        // Short enough to be a tap — replay the animation.
+        playZoomAnimation();
+      }
+      // elapsed 300–499ms: ambiguous zone; treat as neither tap nor long press.
+    }
+    // If tapTimerId is null here, the 500ms timer already fired → long press.
+    // Do nothing (T2.3 handles this path).
+  });
+
+  viewDisplay.addEventListener('pointercancel', () => {
+    // Gesture was interrupted (e.g. browser scroll, incoming call).
+    // Cancel the long-press timer; do not trigger tap or long-press actions.
+    cancelTapTimer();
   });
 
   // Recalculate font size on viewport changes (rotation, resize).
