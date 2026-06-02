@@ -1,7 +1,18 @@
 /* =====================================================================
    Embiggen — style.css
    T1.1: Scaffolding placeholders. Visual polish comes in later tickets.
+   T1.3: Anton self-hosted font + display view full-screen sizing.
    ===================================================================== */
+
+/* ----- Anton self-hosted font ---------------------------------------- */
+
+@font-face {
+  font-family: 'Anton';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/Anton-Regular.woff2') format('woff2');
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -64,10 +75,44 @@ body {
 
 /* ----- Display view -------------------------------------------------- */
 
+/*
+ * #view-display overrides the generic .view.active layout so it acts as a
+ * plain full-viewport container with no extra padding or flex gap.
+ */
+#view-display.active {
+  display: block;
+  padding: 0;
+  gap: 0;
+
+  /* Dark mode default (overridden below for light mode) */
+  background-color: #000000;
+  color: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  #view-display.active {
+    background-color: #ffffff;
+    color: #000000;
+  }
+}
+
 #display-text {
-  /* Placeholder styling — T1.2/T1.3 will handle full-screen text sizing */
-  font-size: 4rem;
+  /* Fill the full viewport; JS will set font-size dynamically */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+
+  /* Anton display font */
+  font-family: 'Anton', sans-serif;
+  font-weight: 400;
   word-break: break-word;
+
+  /* Centre text both axes */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  padding: 1rem;
 }

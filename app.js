@@ -1,6 +1,7 @@
 /**
  * Embiggen — app.js
  * T1.1: Scaffolding — two-view navigation + text passing foundation.
+ * T1.3: Display mode — Anton font, binary-search font sizing, resize handling.
  */
 
 'use strict';
@@ -36,6 +37,44 @@ function showView(viewToShow) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Display mode — font sizing
+// ---------------------------------------------------------------------------
+
+/**
+ * Use binary search to find the largest font-size (in px) at which the text
+ * fits inside #display-text without overflowing either dimension.
+ *
+ * The element must be visible (in the active view) before calling this so
+ * that scrollHeight / scrollWidth measurements are accurate.
+ */
+function fitTextToDisplay() {
+  const MIN_SIZE = 1;
+  const MAX_SIZE = 500;
+  const PRECISION = 1; // Stop when high - low <= 1px
+
+  let low = MIN_SIZE;
+  let high = MAX_SIZE;
+
+  while (high - low > PRECISION) {
+    const mid = Math.floor((low + high) / 2);
+    displayText.style.fontSize = mid + 'px';
+
+    const overflows =
+      displayText.scrollHeight > displayText.clientHeight ||
+      displayText.scrollWidth  > displayText.clientWidth;
+
+    if (overflows) {
+      high = mid; // Too big — try smaller
+    } else {
+      low = mid;  // Fits — try bigger
+    }
+  }
+
+  // Settle on the last known-good (fitting) size.
+  displayText.style.fontSize = low + 'px';
+}
+
 /** Navigate from home → display. */
 function navigateToDisplay() {
   currentText = inputText.value.trim();
@@ -52,6 +91,16 @@ function navigateToDisplay() {
   console.log('Embiggen: text passed to display →', currentText);
 
   showView(viewDisplay);
+
+  // Size immediately with whatever font is available, then re-size once Anton
+  // is confirmed loaded — guards against font-display:swap causing a mis-size
+  // on first visit before the woff2 has been cached.
+  fitTextToDisplay();
+  document.fonts.ready.then(() => {
+    if (viewDisplay.classList.contains('active')) {
+      fitTextToDisplay();
+    }
+  });
 }
 
 /** Navigate from display → home (no new history entry needed). */
@@ -103,6 +152,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // longer be { view: 'display' }, so we simply return to home.
     navigateToHome();
   });
+
+  // Recalculate font size on viewport changes (rotation, resize).
+  function handleResize() {
+    // Only recalculate when the display view is active.
+    if (viewDisplay.classList.contains('active')) {
+      fitTextToDisplay();
+    }
+  }
+
+  window.addEventListener('resize', handleResize);
+  window.addEventListener('orientationchange', handleResize);
 
   // Start on home view (the CSS default; this call is defensive).
   showView(viewHome);
