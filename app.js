@@ -391,68 +391,42 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Tap vs long-press detection on the display view (T1.5)
+  // Tap vs long-press detection on the display view (A1.5)
   //
   // Rules:
-  //   pointerup within 300ms  → tap  → replay animation
-  //   pointerup after  500ms  → long press → do nothing (T2.3 will hook here)
-  //   pointercancel           → cancel the pending timer, do nothing
+  //   touchend within 300ms  → tap        → replay animation
+  //   touchend after  500ms  → long press → share
+  //   300–499ms              → ambiguous  → do nothing
+  //   touchcancel            → reset, do nothing
   //
-  // The click event is intentionally NOT used — pointer events give us
-  // precise control over the start time so tap and long press can't conflict.
+  // Touch events (not pointer events) are used because Android WebView fires
+  // pointercancel on long press to reclaim the gesture for its context menu,
+  // which would silently kill the long-press detection. e.preventDefault() on
+  // touchstart (with passive:false) tells the WebView not to handle this touch
+  // natively. triggerShare() is called from touchend (a user event) so the
+  // Web Share API's user-activation requirement is always satisfied.
   // -------------------------------------------------------------------------
 
-  /** @type {number|null} setTimeout handle for the long-press threshold. */
-  let tapTimerId = null;
+  /** Timestamp (ms) when the current touchstart fired. */
+  let touchStartAt = 0;
 
-  /** Timestamp (ms) when the current pointerdown fired. */
-  let pointerDownAt = 0;
+  viewDisplay.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // keep full touch sequence; block WebView long-press menu
+    touchStartAt = Date.now();
+  }, { passive: false });
 
-  /**
-   * Cancel the running tap/long-press timer, if any.
-   */
-  function cancelTapTimer() {
-    if (tapTimerId !== null) {
-      clearTimeout(tapTimerId);
-      tapTimerId = null;
-    }
-  }
-
-  viewDisplay.addEventListener('pointerdown', () => {
-    pointerDownAt = Date.now();
-
-    // Set a one-shot timer for the long-press threshold.
-    // When it fires, the press has exceeded 500ms — it's a long press.
-    // For now we just mark the timer as expired so pointerup knows not to
-    // treat a late release as a tap. T2.3 will add the share logic here.
-    tapTimerId = setTimeout(() => {
-      tapTimerId = null; // timer expired — long press in progress
-    }, 500);
-  });
-
-  viewDisplay.addEventListener('pointerup', () => {
-    const elapsed = Date.now() - pointerDownAt;
-
-    if (tapTimerId !== null) {
-      // Timer is still running → pointerup arrived within 500ms window.
-      cancelTapTimer();
-
-      if (elapsed < 300) {
-        // Short enough to be a tap — replay the animation.
-        playZoomAnimation();
-      }
-      // elapsed 300–499ms: ambiguous zone; treat as neither tap nor long press.
-    }
-    // If tapTimerId is null here, the 500ms timer already fired → long press.
-    else {
+  viewDisplay.addEventListener('touchend', () => {
+    const elapsed = Date.now() - touchStartAt;
+    if (elapsed < 300) {
+      playZoomAnimation();
+    } else if (elapsed >= 500) {
       triggerShare();
     }
+    // 300–499ms: ambiguous zone; treat as neither tap nor long press.
   });
 
-  viewDisplay.addEventListener('pointercancel', () => {
-    // Gesture was interrupted (e.g. browser scroll, incoming call).
-    // Cancel the long-press timer; do not trigger tap or long-press actions.
-    cancelTapTimer();
+  viewDisplay.addEventListener('touchcancel', () => {
+    touchStartAt = 0;
   });
 
   // -------------------------------------------------------------------------

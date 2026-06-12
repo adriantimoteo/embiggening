@@ -104,6 +104,11 @@ body {
    */
   user-select: none;
   -webkit-user-select: none; /* Safari / iOS */
+
+  /* Prevent WebView from handling touches natively (scroll, long-press menu).
+     Combined with e.preventDefault() on touchstart, this keeps the full
+     touch event sequence alive so our long-press detection works. */
+  touch-action: none;
 }
 
 @media (prefers-color-scheme: light) {
