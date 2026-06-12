@@ -410,23 +410,41 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Timestamp (ms) when the current touchstart fired. */
   let touchStartAt = 0;
 
+  /** setTimeout handle for the long-press threshold, or null. */
+  let longPressTimer = null;
+
   viewDisplay.addEventListener('touchstart', (e) => {
     e.preventDefault(); // keep full touch sequence; block WebView long-press menu
     touchStartAt = Date.now();
+    clearTimeout(longPressTimer);
+    // Fire the long-press action from within the timer callback — at 500ms
+    // while the finger is still down — so it runs before Android WebView can
+    // fire touchcancel to reclaim the gesture. User activation from touchstart
+    // remains valid for 5s, so navigator.share() works from here.
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      navigator.vibrate?.(50); // haptic pulse confirms gesture detected
+      triggerShare();
+    }, 500);
   }, { passive: false });
 
   viewDisplay.addEventListener('touchend', () => {
     const elapsed = Date.now() - touchStartAt;
-    if (elapsed < 300) {
-      playZoomAnimation();
-    } else if (elapsed >= 500) {
-      triggerShare();
+    if (longPressTimer !== null) {
+      // Timer still running → finger lifted before long-press threshold.
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      if (elapsed < 300) {
+        playZoomAnimation();
+      }
+      // 300–499ms: ambiguous zone; treat as neither tap nor long press.
     }
-    // 300–499ms: ambiguous zone; treat as neither tap nor long press.
+    // If longPressTimer is null, the 500ms timer already fired and share was triggered.
   });
 
   viewDisplay.addEventListener('touchcancel', () => {
-    touchStartAt = 0;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
   });
 
   // -------------------------------------------------------------------------
