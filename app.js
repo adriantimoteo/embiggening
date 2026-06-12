@@ -36,6 +36,7 @@ let viewDisplay;
 let inputText;
 let btnEmbiggen;
 let displayText;
+let btnShare;
 
 // ---------------------------------------------------------------------------
 // View helpers
@@ -356,6 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
   inputText   = document.getElementById('input-text');
   btnEmbiggen = document.getElementById('btn-embiggen');
   displayText = document.getElementById('display-text');
+  btnShare    = document.getElementById('btn-share');
 
   // Guard: abort with a clear error if any expected element is missing.
   const missing = [
@@ -364,6 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['input-text',    inputText],
     ['btn-embiggen',  btnEmbiggen],
     ['display-text',  displayText],
+    ['btn-share',     btnShare],
   ].filter(([, el]) => !el).map(([id]) => id);
 
   if (missing.length) {
@@ -391,60 +394,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Tap vs long-press detection on the display view (A1.5)
+  // Display view interactions (A1.6)
   //
-  // Rules:
-  //   touchend within 300ms  → tap        → replay animation
-  //   touchend after  500ms  → long press → share
-  //   300–499ms              → ambiguous  → do nothing
-  //   touchcancel            → reset, do nothing
-  //
-  // Touch events (not pointer events) are used because Android WebView fires
-  // pointercancel on long press to reclaim the gesture for its context menu,
-  // which would silently kill the long-press detection. e.preventDefault() on
-  // touchstart (with passive:false) tells the WebView not to handle this touch
-  // natively. triggerShare() is called from touchend (a user event) so the
-  // Web Share API's user-activation requirement is always satisfied.
+  // Tap anywhere on the display → replay zoom animation.
+  // Share button (bottom-right) → generate image and open share sheet.
+  // stopPropagation on the button prevents the tap-animation from also firing.
   // -------------------------------------------------------------------------
 
-  /** Timestamp (ms) when the current touchstart fired. */
-  let touchStartAt = 0;
+  viewDisplay.addEventListener('click', playZoomAnimation);
 
-  /** setTimeout handle for the long-press threshold, or null. */
-  let longPressTimer = null;
-
-  viewDisplay.addEventListener('touchstart', (e) => {
-    e.preventDefault(); // keep full touch sequence; block WebView long-press menu
-    touchStartAt = Date.now();
-    clearTimeout(longPressTimer);
-    // Fire the long-press action from within the timer callback — at 500ms
-    // while the finger is still down — so it runs before Android WebView can
-    // fire touchcancel to reclaim the gesture. User activation from touchstart
-    // remains valid for 5s, so navigator.share() works from here.
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null;
-      navigator.vibrate?.(50); // haptic pulse confirms gesture detected
-      triggerShare();
-    }, 500);
-  }, { passive: false });
-
-  viewDisplay.addEventListener('touchend', () => {
-    const elapsed = Date.now() - touchStartAt;
-    if (longPressTimer !== null) {
-      // Timer still running → finger lifted before long-press threshold.
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-      if (elapsed < 300) {
-        playZoomAnimation();
-      }
-      // 300–499ms: ambiguous zone; treat as neither tap nor long press.
-    }
-    // If longPressTimer is null, the 500ms timer already fired and share was triggered.
-  });
-
-  viewDisplay.addEventListener('touchcancel', () => {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
+  btnShare.addEventListener('click', (e) => {
+    e.stopPropagation();
+    triggerShare();
   });
 
   // -------------------------------------------------------------------------

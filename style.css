@@ -146,6 +146,31 @@ body {
   transform-origin: center center;
 }
 
+/* ----- Share button -------------------------------------------------- */
+
+#btn-share {
+  position: fixed;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  right: calc(1.25rem + env(safe-area-inset-right));
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 10px;
+  opacity: 0.45;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 1;
+}
+
+#btn-share:active {
+  opacity: 0.9;
+}
+
 /* ----- Zoom-in animation --------------------------------------------- */
 
 /*
