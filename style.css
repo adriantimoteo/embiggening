@@ -105,9 +105,8 @@ body {
   user-select: none;
   -webkit-user-select: none; /* Safari / iOS */
 
-  /* Prevent WebView from handling touches natively (scroll, long-press menu).
-     Combined with e.preventDefault() on touchstart, this keeps the full
-     touch event sequence alive so our long-press detection works. */
+  /* Prevent the WebView from handling touches natively — no scroll, no
+     double-tap zoom, no native long-press callout menu over the text. */
   touch-action: none;
 }
 

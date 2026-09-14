@@ -6,7 +6,7 @@
  * T1.5: Navigation — back clears textarea, tap replays animation, long-press stub.
  * T2.1: Screen Wake Lock — keeps the screen on while in display mode.
  * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
- * T2.3: Long press + share — triggers Web Share API (or download fallback) on long press.
+ * T2.3: Share — triggers Web Share API (or download fallback) via the share button.
  * T3.3: Mobile UX polish — blur keyboard before entering display mode.
  */
 
@@ -215,7 +215,7 @@ async function generateShareImage() {
  * API. Falls back to a direct download if the API is unavailable or does not
  * support file sharing.
  *
- * Called from the long-press path in the pointerup handler.
+ * Called from the share button's click handler.
  */
 async function triggerShare() {
   let blob;

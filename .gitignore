@@ -1,0 +1,7 @@
+# Claude Code local state — not shared project config
+.claude/settings.local.json
+.claude/worktrees/
+
+# OS cruft
+.DS_Store
+Thumbs.db
