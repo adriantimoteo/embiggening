@@ -91,47 +91,6 @@ function showView(viewToShow) {
 }
 
 // ---------------------------------------------------------------------------
-// Display mode — font sizing
-// ---------------------------------------------------------------------------
-
-/**
- * Use binary search to find the largest font-size (in px) at which the text
- * fits inside #display-text without overflowing either dimension.
- *
- * The element must be visible (in the active view) before calling this so
- * that scrollHeight / scrollWidth measurements are accurate.
- *
- * Used by the airport tile grid only; Default/Nothing use the per-line
- * layout (renderLineLayout, T5.1).
- */
-function fitTextToDisplay() {
-  const MIN_SIZE = 1;
-  const MAX_SIZE = 500;
-  const PRECISION = 1; // Stop when high - low <= 1px
-
-  let low = MIN_SIZE;
-  let high = MAX_SIZE;
-
-  while (high - low > PRECISION) {
-    const mid = Math.floor((low + high) / 2);
-    displayText.style.fontSize = mid + 'px';
-
-    const overflows =
-      displayText.scrollHeight > displayText.clientHeight ||
-      displayText.scrollWidth  > displayText.clientWidth;
-
-    if (overflows) {
-      high = mid; // Too big — try smaller
-    } else {
-      low = mid;  // Fits — try bigger
-    }
-  }
-
-  // Settle on the last known-good (fitting) size.
-  displayText.style.fontSize = low + 'px';
-}
-
-// ---------------------------------------------------------------------------
 // Default/Nothing per-line layout (T5.1)
 //
 // Text is broken between words (or groups of words) wherever possible. Each
@@ -424,7 +383,7 @@ function renderLineLayout() {
 /** Size/lay out the display for the active theme. Display view must be visible. */
 function fitDisplay() {
   if (currentTheme === 'airport') {
-    fitTextToDisplay();
+    fitFlapBoard();
   } else {
     renderLineLayout();
   }
@@ -446,26 +405,136 @@ function randomFlapChar() {
 }
 
 /**
- * Replace #display-text's contents with one .flap-tile per character of
- * `text` (uppercased — split-flap tiles are conventionally caps-only; this
- * is a display-only transform, currentText itself keeps its original case).
- * A space becomes a blank tile so word gaps still occupy a grid column,
- * matching a real fixed-column board.
+ * Tile geometry in em, mirroring the .flap-tile CSS rules: 0.85em wide and
+ * 1em tall plus a 0.03em margin on every side (T4.5).
  */
-function buildFlapTiles(text) {
+const FLAP_TILE_W_EM = 0.85 + 0.06;
+const FLAP_TILE_H_EM = 1 + 0.06;
+
+/**
+ * A word is cut mid-word only if that lets tiles be at least this many times
+ * bigger than the biggest layout that keeps every word whole (T4.5).
+ */
+const FLAP_SPLIT_GAIN = 4;
+
+/**
+ * Word-wrap text into rows of at most `cols` tiles (T4.5). Rows break only
+ * at word boundaries: words are separated by one blank tile within a row, and
+ * a row never starts or ends with a blank. A word wider than a whole row is
+ * the last resort and is cut into full-width chunks. Typed newlines force a
+ * row break. Text is uppercased — split-flap tiles are conventionally
+ * caps-only; currentText itself keeps its original case.
+ * @returns {string[][]} Rows of characters (' ' = blank tile).
+ */
+function layoutFlapRows(text, cols) {
+  const rows = [];
+
+  text.toUpperCase().split('\n').forEach((line) => {
+    let row = [];
+    line.split(/\s+/).filter(Boolean).forEach((word) => {
+      let chars = Array.from(word);
+
+      if (row.length && row.length + 1 + chars.length <= cols) {
+        row.push(' ', ...chars);
+        return;
+      }
+      if (row.length) {
+        rows.push(row);
+        row = [];
+      }
+      while (chars.length > cols) {
+        rows.push(chars.slice(0, cols));
+        chars = chars.slice(cols);
+      }
+      row = chars;
+    });
+    if (row.length) rows.push(row);
+  });
+
+  return rows;
+}
+
+/** Signature of what is currently built into #display-text (see fitFlapBoard). */
+let flapBoardKey = '';
+
+/**
+ * Find the largest tile size at which the word-wrapped board fits the display,
+ * set it as #display-text's font-size, and build the tile rows (T4.5).
+ * Replaces the old DOM-overflow binary search: the layout is computed from
+ * the fixed tile geometry, so it doesn't depend on the browser's own wrapping.
+ *
+ * The rebuild is skipped when neither size nor rows changed, so a late
+ * fonts.ready re-fit can't wipe out a flip animation already in progress.
+ */
+function fitFlapBoard() {
+  const W = displayText.clientWidth;
+  const H = displayText.clientHeight;
+  if (!W || !H) return;
+
+  // Rows for a given tile size, or null if the board doesn't fit or the row
+  // is narrower than minCols tiles.
+  const layoutAt = (size, minCols) => {
+    const cols = Math.floor(W / (FLAP_TILE_W_EM * size));
+    if (cols < minCols) return null;
+    const rows = layoutFlapRows(currentText, cols);
+    return rows.length * FLAP_TILE_H_EM * size <= H ? rows : null;
+  };
+
+  // Largest whole-pixel size that fits under those constraints (0 if none).
+  const largestSize = (minCols) => {
+    let lo = 0;
+    let hi = 501;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (layoutAt(mid, minCols)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+
+  // Prefer whole words: only cut a word when keeping every word whole would
+  // make the tiles less than 1/FLAP_SPLIT_GAIN as big as cutting allows.
+  const longestWord = Math.max(...currentText.split(/\s+/).map((w) => Array.from(w).length));
+  const anySize   = largestSize(1);
+  const wholeSize = largestSize(longestWord);
+  const size = wholeSize && anySize < wholeSize * FLAP_SPLIT_GAIN ? wholeSize : Math.max(anySize, 1);
+
+  const cols = Math.max(1, Math.floor(W / (FLAP_TILE_W_EM * size)));
+  const rows = layoutFlapRows(currentText, cols);
+  const key = size + '|' + rows.map((r) => r.join('')).join('/');
+
+  displayText.style.fontSize = size + 'px';
+  if (key === flapBoardKey && displayText.childElementCount) return;
+
+  flapBoardKey = key;
+  buildFlapRows(rows);
+}
+
+/** Replace #display-text's contents with one .flap-row of .flap-tile per row. */
+function buildFlapRows(rows) {
   displayText.innerHTML = '';
-  for (const char of text.toUpperCase()) {
-    const tile = document.createElement('span');
-    tile.className = 'flap-tile';
-    tile.dataset.char = char;
+  rows.forEach((chars) => {
+    const row = document.createElement('div');
+    row.className = 'flap-row';
 
-    const face = document.createElement('span');
-    face.className = 'flap-tile-face';
-    face.textContent = char === ' ' ? '' : char;
+    chars.forEach((char) => {
+      const tile = document.createElement('span');
+      tile.className = 'flap-tile';
+      tile.dataset.char = char;
 
-    tile.appendChild(face);
-    displayText.appendChild(tile);
-  }
+      const face = document.createElement('span');
+      face.className = 'flap-tile-face';
+      face.textContent = char === ' ' ? '' : char;
+
+      tile.appendChild(face);
+      row.appendChild(tile);
+    });
+
+    displayText.appendChild(row);
+  });
 }
 
 /**
@@ -515,27 +584,14 @@ function playFlapAnimation() {
 }
 
 /**
- * Read the live tile grid back out of the DOM, grouped into rows by their
- * rendered vertical position. Used by generateShareImage() so the shared
- * image matches the actual on-screen wrap exactly, rather than recomputing
- * (and potentially mismatching) the wrap independently.
+ * Read the live board back out of the DOM, one array of characters per
+ * .flap-row. Used by generateShareImage() so the shared image matches the
+ * on-screen rows exactly rather than recomputing the wrap independently.
  * @returns {string[][]} Rows of characters, in display order.
  */
 function readFlapRows() {
-  const tiles = Array.from(displayText.querySelectorAll('.flap-tile'));
-  const rows = [];
-  let lastTop = null;
-
-  for (const tile of tiles) {
-    const top = Math.round(tile.offsetTop);
-    if (top !== lastTop) {
-      rows.push([]);
-      lastTop = top;
-    }
-    rows[rows.length - 1].push(tile.dataset.char);
-  }
-
-  return rows;
+  return Array.from(displayText.querySelectorAll('.flap-row')).map((row) =>
+    Array.from(row.children).map((tile) => tile.dataset.char));
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +603,7 @@ function readFlapRows() {
  *
  * The output exactly matches what the user sees on screen:
  *   - Same font and per-line sizes as the on-screen layout (Default/Nothing:
- *     currentLayout from T5.1; airport: fitTextToDisplay()'s size)
+ *     currentLayout from T5.1; airport: fitFlapBoard()'s size)
  *   - Same background and text colours (dark/light mode aware)
  *   - Same line breaks, horizontally and vertically centred
  *   - Scaled by devicePixelRatio for crisp output on retina/HiDPI screens
@@ -574,7 +630,7 @@ async function generateShareImage() {
   ctx.scale(dpr, dpr);
 
   if (currentTheme === 'airport') {
-    // Exact font-size that fitTextToDisplay() computed, e.g. "142px".
+    // Exact font-size that fitFlapBoard() set, e.g. "142px".
     drawFlapBoard(ctx, vw, vh, parseInt(displayText.style.fontSize, 10));
   } else {
     drawTextBlock(ctx, vw, vh);
@@ -814,12 +870,10 @@ function navigateToDisplay() {
   // Push a new history entry so the browser back button can return to home.
   history.pushState({ view: 'display' }, '', '');
 
-  if (currentTheme === 'airport') {
-    buildFlapTiles(currentText);
-  } else {
-    // Lines are built by fitDisplay() once the view is visible and measurable.
-    displayText.innerHTML = '';
-  }
+  // Rows/lines are built by fitDisplay() once the view is visible and
+  // measurable.
+  displayText.innerHTML = '';
+  flapBoardKey = '';
   console.log('Embiggen: text passed to display →', currentText);
 
   // Dismiss the on-screen keyboard before the display view appears so it

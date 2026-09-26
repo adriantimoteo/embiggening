@@ -242,19 +242,25 @@ body[data-theme="airport"] #view-display.active {
 }
 
 /*
- * Fixed-grid tile layout replaces the single centered text block. Every
- * character (including spaces) is its own .flap-tile, so wrapping happens
- * at the character grid edge rather than at word boundaries — matching a
- * real fixed-column split-flap board.
+ * Tile grid replaces the single centered text block: a centred column of
+ * .flap-row rows, each a centred run of .flap-tile tiles (one per character,
+ * blank tiles between words). JS decides the rows — words wrap whole, never
+ * mid-word unless a word is wider than the board (T4.5) — so the container
+ * itself never wraps. Tile geometry is mirrored in FLAP_TILE_*_EM in app.js.
  */
 body[data-theme="airport"] #display-text {
   display: flex;
-  flex-flow: row wrap;
+  flex-direction: column;
   align-items: center;
-  align-content: center;
   justify-content: center;
   font-family: 'Archivo Black', sans-serif;
   text-transform: uppercase;
+}
+
+.flap-row {
+  display: flex;
+  flex: none;
+  justify-content: center;
 }
 
 .flap-tile {
