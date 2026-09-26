@@ -5,8 +5,8 @@
    T1.4: Zoom-in animation using transform: scale().
    T1.5: Navigation — tap-to-replay, back clears textarea, no text selection.
    T3.3: Mobile UX polish — safe areas, overscroll, pinch-zoom, keyboard.
-   T4.1: Nothing OS theme — Ndot font swap via a discreet toggle.
-   T4.2: Airport split-flap theme — tile grid, flip animation, 3-dot select.
+   T4.2: Airport split-flap theme — tile grid, flip animation, theme select.
+   T4.8: Nothing OS theme (T4.1) removed; default + airport remain.
    ===================================================================== */
 
 /* ----- Anton self-hosted font ---------------------------------------- */
@@ -17,16 +17,6 @@
   font-weight: 400;
   font-display: swap;
   src: url('fonts/Anton-Regular.woff2') format('woff2');
-}
-
-/* ----- Nothing OS theme: self-hosted Ndot-style font (T4.1) ---------- */
-
-@font-face {
-  font-family: 'NDOT 45 (inspired by NOTHING)';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('fonts/ndot-45-inspired-by-nothing.woff2') format('woff2');
 }
 
 /* ----- Airport split-flap theme: self-hosted Barlow Condensed (T4.6) - */
@@ -105,8 +95,8 @@ body {
 /* ----- Theme selector (T4.1, T4.2; squares in T4.3, quieter in T4.7) ---- */
 
 /*
- * Three small tappable squares, each tinted to hint at its theme (grey /
- * Nothing red / board cream). Fills are permanent, so state reads from
+ * Two small tappable squares, each tinted to hint at its theme (grey /
+ * board cream). Fills are permanent, so state reads from
  * brightness: inactive squares are dimmed, the active one is full strength
  * with a ring in the current text colour (works in light and dark mode).
  */
@@ -130,10 +120,6 @@ body {
 
 .theme-dot[data-theme="default"] {
   background: #9a9a9a;
-}
-
-.theme-dot[data-theme="nothing"] {
-  background: #c4373d;
 }
 
 .theme-dot[data-theme="airport"] {
@@ -226,17 +212,11 @@ body {
   white-space: nowrap;
 }
 
-/* Nothing OS theme: swap the display font only — colors stay untouched so
-   the embiggened output stays strictly monochrome (T4.1). */
-body[data-theme="nothing"] #display-text {
-  font-family: 'NDOT 45 (inspired by NOTHING)', 'Anton', sans-serif;
-}
-
 /* ----- Airport split-flap theme (T4.2) -------------------------------- */
 
 /*
  * Forced black board / cream tiles regardless of system light/dark — a
- * "white board" doesn't read as a departure sign, unlike the Nothing
+ * "white board" doesn't read as a departure sign, unlike the default
  * theme, which stays system-aware.
  */
 body[data-theme="airport"] #view-display.active {

@@ -8,9 +8,10 @@
  * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
  * T2.3: Share — triggers Web Share API (or download fallback) via the share button.
  * T3.3: Mobile UX polish — blur keyboard before entering display mode.
- * T4.1: Nothing OS theme — Ndot font swap via a discreet home-screen toggle.
+ * T4.1: Nothing OS theme (removed in T4.8).
  * T4.2: Airport split-flap theme — tile grid, flip animation, 3-dot select.
- * T5.1: Per-line layout for Default/Nothing — word-boundary lines, one size per line.
+ * T5.1: Per-line layout for the default theme — word-boundary lines, one size per line.
+ * T4.8: Nothing theme removed; default + airport remain.
  */
 
 'use strict';
@@ -47,8 +48,7 @@ let themeDots;
 // ---------------------------------------------------------------------------
 
 const THEME_STORAGE_KEY = 'embiggen-theme';
-const THEMES = ['default', 'nothing', 'airport'];
-const NOTHING_FONT = "'NDOT 45 (inspired by NOTHING)'";
+const THEMES = ['default', 'airport'];
 const AIRPORT_FONT = "'Barlow Condensed'";
 
 /** The active theme name. Kept in sync with document.body.dataset.theme. */
@@ -91,7 +91,7 @@ function showView(viewToShow) {
 }
 
 // ---------------------------------------------------------------------------
-// Default/Nothing per-line layout (T5.1)
+// Default-theme per-line layout (T5.1)
 //
 // Text is broken between words (or groups of words) wherever possible. Each
 // line gets its own font size so it fills the display width. Every grouping
@@ -125,9 +125,9 @@ const MAX_SPLITTABLE_WORDS = 3;
 /** Above this many optional line-break positions, use the greedy fallback. */
 const MAX_OPTIONAL_BREAKS = 11;
 
-/** Font-family used for the Default/Nothing display, in CSS/canvas syntax. */
+/** Font-family used for the default-theme display, in CSS/canvas syntax. */
 function displayFontFamily() {
-  return currentTheme === 'nothing' ? `${NOTHING_FONT}, 'Anton', sans-serif` : "'Anton', sans-serif";
+  return "'Anton', sans-serif";
 }
 
 /** Build a measure(str) → width-in-em function (cached) for a font family. */
@@ -376,7 +376,7 @@ function computeLineLayout(text, W, H, measure) {
 /** The layout currently on screen; the share image draws exactly this. */
 let currentLayout = null;
 
-/** Lay out and render currentText as one element per line (Default/Nothing). */
+/** Lay out and render currentText as one element per line (default theme). */
 function renderLineLayout() {
   const W = displayText.clientWidth;
   const H = displayText.clientHeight;
@@ -596,7 +596,7 @@ function flipTile(tile, delay) {
 
 /** Kick off a staggered flip sequence across every tile in #display-text. */
 function playFlapAnimation() {
-  // A .zoom-in left over from a Default/Nothing run would replay whenever
+  // A .zoom-in left over from a default-theme run would replay whenever
   // the display view goes display:none → shown, scaling the board (T4.4).
   displayText.classList.remove('zoom-in');
 
@@ -623,7 +623,7 @@ function readFlapRows() {
  * Render the current embiggened text to a canvas and return a PNG Blob.
  *
  * The output exactly matches what the user sees on screen:
- *   - Same font and per-line sizes as the on-screen layout (Default/Nothing:
+ *   - Same font and per-line sizes as the on-screen layout (default theme:
  *     currentLayout from T5.1; airport: fitFlapBoard()'s size)
  *   - Same background and text colours (dark/light mode aware)
  *   - Same line breaks, horizontally and vertically centred
@@ -673,7 +673,7 @@ async function generateShareImage() {
 }
 
 /**
- * Draw the Default/Nothing themes' per-line layout (currentLayout, T5.1) —
+ * Draw the default theme's per-line layout (currentLayout, T5.1) —
  * the same lines and font sizes the live display shows. Each line sits in a
  * line box of size × LINE_HEIGHT, with the text placed the way CSS places it
  * (font content area centred in the line box), so canvas matches the DOM.
@@ -984,7 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // rather than fallback ones that would resize the text once the font
   // arrives (T4.4, T5.1). Failure is harmless — layout re-runs on
   // fonts.ready as before.
-  [`600 1em ${AIRPORT_FONT}`, `1em ${NOTHING_FONT}`, "1em 'Anton'"].forEach((font) => {
+  [`600 1em ${AIRPORT_FONT}`, "1em 'Anton'"].forEach((font) => {
     document.fonts.load(font).catch(() => {});
   });
 
