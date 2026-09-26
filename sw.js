@@ -9,7 +9,7 @@
 
 'use strict';
 
-const CACHE_NAME = 'embiggen-v1';
+const CACHE_NAME = 'embiggen-v3';
 
 const ASSETS = [
   './',
@@ -18,6 +18,8 @@ const ASSETS = [
   './app.js',
   './manifest.json',
   './fonts/Anton-Regular.woff2',
+  './fonts/ndot-45-inspired-by-nothing.woff2',
+  './fonts/ArchivoBlack-Regular.woff2',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

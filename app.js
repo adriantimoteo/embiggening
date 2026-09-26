@@ -8,6 +8,8 @@
  * T2.2: Canvas image generation — generateShareImage() returns a PNG Blob.
  * T2.3: Share — triggers Web Share API (or download fallback) via the share button.
  * T3.3: Mobile UX polish — blur keyboard before entering display mode.
+ * T4.1: Nothing OS theme — Ndot font swap via a discreet home-screen toggle.
+ * T4.2: Airport split-flap theme — tile grid, flip animation, 3-dot select.
  */
 
 'use strict';
@@ -37,6 +39,41 @@ let inputText;
 let btnEmbiggen;
 let displayText;
 let btnShare;
+let themeDots;
+
+// ---------------------------------------------------------------------------
+// Theme selection (T4.1, extended to 3 themes in T4.2)
+// ---------------------------------------------------------------------------
+
+const THEME_STORAGE_KEY = 'embiggen-theme';
+const THEMES = ['default', 'nothing', 'airport'];
+const NOTHING_FONT = "'NDOT 45 (inspired by NOTHING)'";
+const AIRPORT_FONT = "'Archivo Black'";
+
+/** The active theme name. Kept in sync with document.body.dataset.theme. */
+let currentTheme = 'default';
+
+/** Apply a theme by name, update the dot selector, and persist the choice. */
+function applyTheme(name) {
+  currentTheme = THEMES.includes(name) ? name : 'default';
+
+  if (currentTheme === 'default') {
+    delete document.body.dataset.theme;
+  } else {
+    document.body.dataset.theme = currentTheme;
+  }
+
+  themeDots.forEach((dot) => {
+    dot.classList.toggle('active', dot.dataset.theme === currentTheme);
+  });
+
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+  } catch (_err) {
+    // Storage unavailable (private browsing, disabled storage) — theme still
+    // applies for this session, just won't persist across reloads.
+  }
+}
 
 // ---------------------------------------------------------------------------
 // View helpers
@@ -91,6 +128,114 @@ function fitTextToDisplay() {
 }
 
 // ---------------------------------------------------------------------------
+// Airport split-flap theme — tiles + flip animation (T4.2)
+// ---------------------------------------------------------------------------
+
+/** Characters a tile flickers through before landing on its real character. */
+const FLAP_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const FLAP_STEP_MS = 90;
+const FLAP_STAGGER_MS = 15;
+const FLAP_MIN_STEPS = 8;
+const FLAP_MAX_STEPS = 18;
+
+function randomFlapChar() {
+  return FLAP_CHARSET[Math.floor(Math.random() * FLAP_CHARSET.length)];
+}
+
+/**
+ * Replace #display-text's contents with one .flap-tile per character of
+ * `text` (uppercased — split-flap tiles are conventionally caps-only; this
+ * is a display-only transform, currentText itself keeps its original case).
+ * A space becomes a blank tile so word gaps still occupy a grid column,
+ * matching a real fixed-column board.
+ */
+function buildFlapTiles(text) {
+  displayText.innerHTML = '';
+  for (const char of text.toUpperCase()) {
+    const tile = document.createElement('span');
+    tile.className = 'flap-tile';
+    tile.dataset.char = char;
+
+    const face = document.createElement('span');
+    face.className = 'flap-tile-face';
+    face.textContent = char === ' ' ? '' : char;
+
+    tile.appendChild(face);
+    displayText.appendChild(tile);
+  }
+}
+
+/**
+ * Run a tile through a few random-character "flicker" steps before landing
+ * on its real character. Each step re-triggers the flap-flip CSS animation
+ * (remove/reflow/re-add, same trick playZoomAnimation uses) and swaps the
+ * face's textContent at the animation's squash midpoint so the character
+ * change happens while the tile is edge-on, selling the flip illusion.
+ */
+function flipTile(tile, delay) {
+  const face = tile.querySelector('.flap-tile-face');
+  const finalChar = tile.dataset.char;
+  const steps = FLAP_MIN_STEPS + Math.floor(Math.random() * (FLAP_MAX_STEPS - FLAP_MIN_STEPS + 1));
+  let step = 0;
+
+  function runStep() {
+    const isLast = step === steps - 1;
+    const char = isLast ? finalChar : randomFlapChar();
+
+    tile.classList.remove('flapping');
+    // Force reflow so the animation restarts cleanly on every step.
+    // eslint-disable-next-line no-unused-expressions
+    tile.offsetWidth; // jshint ignore:line
+    tile.classList.add('flapping');
+
+    setTimeout(() => {
+      face.textContent = char === ' ' ? '' : char;
+    }, FLAP_STEP_MS / 2);
+
+    step++;
+    if (step < steps) {
+      setTimeout(runStep, FLAP_STEP_MS);
+    }
+  }
+
+  setTimeout(runStep, delay);
+}
+
+/** Kick off a staggered flip sequence across every tile in #display-text. */
+function playFlapAnimation() {
+  // A .zoom-in left over from a Default/Nothing run would replay whenever
+  // the display view goes display:none → shown, scaling the board (T4.4).
+  displayText.classList.remove('zoom-in');
+
+  const tiles = displayText.querySelectorAll('.flap-tile');
+  tiles.forEach((tile, i) => flipTile(tile, i * FLAP_STAGGER_MS));
+}
+
+/**
+ * Read the live tile grid back out of the DOM, grouped into rows by their
+ * rendered vertical position. Used by generateShareImage() so the shared
+ * image matches the actual on-screen wrap exactly, rather than recomputing
+ * (and potentially mismatching) the wrap independently.
+ * @returns {string[][]} Rows of characters, in display order.
+ */
+function readFlapRows() {
+  const tiles = Array.from(displayText.querySelectorAll('.flap-tile'));
+  const rows = [];
+  let lastTop = null;
+
+  for (const tile of tiles) {
+    const top = Math.round(tile.offsetTop);
+    if (top !== lastTop) {
+      rows.push([]);
+      lastTop = top;
+    }
+    rows[rows.length - 1].push(tile.dataset.char);
+  }
+
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Canvas image generation (T2.2)
 // ---------------------------------------------------------------------------
 
@@ -106,7 +251,7 @@ function fitTextToDisplay() {
  * @returns {Promise<Blob>} A Promise that resolves to a PNG image Blob.
  */
 async function generateShareImage() {
-  // Wait for Anton to be fully loaded before drawing, so measureText() and
+  // Wait for fonts to be fully loaded before drawing, so measureText() and
   // the actual glyph outlines are both based on the real font metrics.
   await document.fonts.ready;
 
@@ -119,11 +264,6 @@ async function generateShareImage() {
   const fontSizeStr = displayText.style.fontSize; // e.g. "142px"
   const fontSizePx  = parseInt(fontSizeStr, 10);
 
-  // Determine colours from the system colour-scheme preference.
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const bgColour   = isDark ? '#000000' : '#ffffff';
-  const textColour = isDark ? '#ffffff' : '#000000';
-
   // Create an off-screen canvas at physical pixel dimensions.
   const canvas = document.createElement('canvas');
   canvas.width  = vw * dpr;
@@ -134,16 +274,44 @@ async function generateShareImage() {
   // Scale the context so all subsequent drawing coordinates are in CSS pixels.
   ctx.scale(dpr, dpr);
 
-  // Fill background.
+  if (currentTheme === 'airport') {
+    drawFlapBoard(ctx, vw, vh, fontSizePx);
+  } else {
+    drawTextBlock(ctx, vw, vh, fontSizeStr, fontSizePx);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Output — convert the canvas to a PNG Blob via a Promise wrapper.
+  // ---------------------------------------------------------------------------
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error('canvas.toBlob() returned null'));
+      }
+    }, 'image/png');
+  });
+}
+
+/**
+ * Draw the Default/Nothing themes' single word-wrapped text block. CSS wraps
+ * automatically for the live display; canvas does not, so word-wrapping is
+ * reproduced manually here to match.
+ */
+function drawTextBlock(ctx, vw, vh, fontSizeStr, fontSizePx) {
+  // Determine colours from the system colour-scheme preference.
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const bgColour   = isDark ? '#000000' : '#ffffff';
+  const textColour = isDark ? '#ffffff' : '#000000';
+
   ctx.fillStyle = bgColour;
   ctx.fillRect(0, 0, vw, vh);
 
   // Configure the font — must match the CSS font stack used in #display-text.
-  ctx.font = `${fontSizeStr} Anton`;
-
-  // ---------------------------------------------------------------------------
-  // Manual word wrapping — CSS wraps automatically; canvas does not.
-  // ---------------------------------------------------------------------------
+  const fontFamily = currentTheme === 'nothing' ? NOTHING_FONT : 'Anton';
+  ctx.font = `${fontSizeStr} ${fontFamily}`;
 
   const words      = currentText.split(' ');
   const lines      = [];
@@ -175,10 +343,6 @@ async function generateShareImage() {
     lines.push(currentLine);
   }
 
-  // ---------------------------------------------------------------------------
-  // Text positioning — vertically and horizontally centred.
-  // ---------------------------------------------------------------------------
-
   const lineHeight    = fontSizePx * 1.15;
   const totalBlockH   = lines.length * lineHeight;
   const startY        = (vh - totalBlockH) / 2;
@@ -190,19 +354,63 @@ async function generateShareImage() {
   lines.forEach((line, i) => {
     ctx.fillText(line, vw / 2, startY + i * lineHeight);
   });
+}
 
-  // ---------------------------------------------------------------------------
-  // Output — convert the canvas to a PNG Blob via a Promise wrapper.
-  // ---------------------------------------------------------------------------
+/**
+ * Draw the airport theme's tile grid, reading actual row breaks back out of
+ * the live DOM (readFlapRows()) so the image matches the on-screen
+ * fixed-column wrap exactly rather than recomputing it independently.
+ * Tile geometry (0.85em wide, 1em tall, 0.03em margin) mirrors the
+ * .flap-tile CSS rules in style.css.
+ */
+function drawFlapBoard(ctx, vw, vh, fontSizePx) {
+  const BOARD_BG = '#0a0a0a';
+  const TILE_BG  = '#161616';
+  const TEXT_COLOUR = '#e8e4d8';
+  const DIVIDER_COLOUR = 'rgba(0, 0, 0, 0.55)';
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error('canvas.toBlob() returned null'));
+  ctx.fillStyle = BOARD_BG;
+  ctx.fillRect(0, 0, vw, vh);
+
+  const rows = readFlapRows();
+
+  const margin   = fontSizePx * 0.03;
+  const tileW    = fontSizePx * 0.85 + margin * 2;
+  const tileH    = fontSizePx * 1 + margin * 2;
+  const totalH   = rows.length * tileH;
+  const startY   = (vh - totalH) / 2;
+
+  ctx.font = `${fontSizePx}px ${AIRPORT_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  rows.forEach((row, r) => {
+    const rowW    = row.length * tileW;
+    const startX  = (vw - rowW) / 2;
+    const cy      = startY + r * tileH + tileH / 2;
+
+    row.forEach((char, c) => {
+      const cx = startX + c * tileW + tileW / 2;
+      const left = cx - tileW / 2 + margin;
+      const top  = cy - tileH / 2 + margin;
+      const w    = tileW - margin * 2;
+      const h    = tileH - margin * 2;
+
+      ctx.fillStyle = TILE_BG;
+      ctx.fillRect(left, top, w, h);
+
+      ctx.strokeStyle = DIVIDER_COLOUR;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(left, cy);
+      ctx.lineTo(left + w, cy);
+      ctx.stroke();
+
+      if (char !== ' ') {
+        ctx.fillStyle = TEXT_COLOUR;
+        ctx.fillText(char, cx, cy);
       }
-    }, 'image/png');
+    });
   });
 }
 
@@ -268,6 +476,19 @@ function playZoomAnimation() {
   displayText.classList.add('zoom-in');
 }
 
+/**
+ * Play whichever entrance animation matches the active theme — the flap
+ * animation replaces the zoom-in entirely for the airport theme rather than
+ * layering on top of it (T4.2).
+ */
+function playEntranceAnimation() {
+  if (currentTheme === 'airport') {
+    playFlapAnimation();
+  } else {
+    playZoomAnimation();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Screen Wake Lock (T2.1)
 // ---------------------------------------------------------------------------
@@ -312,7 +533,12 @@ function navigateToDisplay() {
   // Push a new history entry so the browser back button can return to home.
   history.pushState({ view: 'display' }, '', '');
 
-  displayText.textContent = currentText;
+  if (currentTheme === 'airport') {
+    buildFlapTiles(currentText);
+  } else {
+    displayText.innerHTML = '';
+    displayText.textContent = currentText;
+  }
   console.log('Embiggen: text passed to display →', currentText);
 
   // Dismiss the on-screen keyboard before the display view appears so it
@@ -326,11 +552,12 @@ function navigateToDisplay() {
   // already correct at the start of the scale — the animation only transforms
   // the already-sized element, it never changes font-size.
   fitTextToDisplay();
-  playZoomAnimation();
+  playEntranceAnimation();
 
-  // Re-size once Anton is confirmed loaded (guards against font-display:swap
-  // causing a mis-size on first visit before the woff2 has been cached).
-  // If a resize is needed we replay the animation so the final state matches.
+  // Re-size once the display font is confirmed loaded (guards against
+  // font-display:swap causing a mis-size on first visit before the woff2 has
+  // been cached). If a resize is needed we replay the animation so the final
+  // state matches.
   document.fonts.ready.then(() => {
     if (viewDisplay.classList.contains('active')) {
       fitTextToDisplay();
@@ -358,6 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnEmbiggen = document.getElementById('btn-embiggen');
   displayText = document.getElementById('display-text');
   btnShare    = document.getElementById('btn-share');
+  themeDots   = document.querySelectorAll('.theme-dot');
 
   // Guard: abort with a clear error if any expected element is missing.
   const missing = [
@@ -367,6 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['btn-embiggen',  btnEmbiggen],
     ['display-text',  displayText],
     ['btn-share',     btnShare],
+    ['theme-select',  themeDots.length === THEMES.length ? themeDots : null],
   ].filter(([, el]) => !el).map(([id]) => id);
 
   if (missing.length) {
@@ -376,6 +605,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Wire up the Embiggen button.
   btnEmbiggen.addEventListener('click', navigateToDisplay);
+
+  // Restore the theme preference, if any (T4.1, T4.2).
+  let storedTheme;
+  try {
+    storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  } catch (_err) {
+    storedTheme = null;
+  }
+  applyTheme(storedTheme || 'default');
+
+  // Preload the airport font so the first fit uses real font metrics rather
+  // than fallback ones that would resize the board once the font arrives
+  // (T4.4). Failure is harmless — fit just re-runs on fonts.ready as before.
+  document.fonts.load(`1em ${AIRPORT_FONT}`).catch(() => {});
+
+  themeDots.forEach((dot) => {
+    dot.addEventListener('click', () => applyTheme(dot.dataset.theme));
+  });
 
   // Enter (without Shift) on the textarea triggers Embiggen, matching the
   // button click. Shift+Enter inserts a newline as normal.
@@ -401,7 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // stopPropagation on the button prevents the tap-animation from also firing.
   // -------------------------------------------------------------------------
 
-  viewDisplay.addEventListener('click', playZoomAnimation);
+  viewDisplay.addEventListener('click', playEntranceAnimation);
 
   btnShare.addEventListener('click', (e) => {
     e.stopPropagation();

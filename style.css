@@ -5,6 +5,8 @@
    T1.4: Zoom-in animation using transform: scale().
    T1.5: Navigation — tap-to-replay, back clears textarea, no text selection.
    T3.3: Mobile UX polish — safe areas, overscroll, pinch-zoom, keyboard.
+   T4.1: Nothing OS theme — Ndot font swap via a discreet toggle.
+   T4.2: Airport split-flap theme — tile grid, flip animation, 3-dot select.
    ===================================================================== */
 
 /* ----- Anton self-hosted font ---------------------------------------- */
@@ -15,6 +17,26 @@
   font-weight: 400;
   font-display: swap;
   src: url('fonts/Anton-Regular.woff2') format('woff2');
+}
+
+/* ----- Nothing OS theme: self-hosted Ndot-style font (T4.1) ---------- */
+
+@font-face {
+  font-family: 'NDOT 45 (inspired by NOTHING)';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/ndot-45-inspired-by-nothing.woff2') format('woff2');
+}
+
+/* ----- Airport split-flap theme: self-hosted Archivo Black (T4.2) ---- */
+
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/ArchivoBlack-Regular.woff2') format('woff2');
 }
 
 *, *::before, *::after {
@@ -78,6 +100,52 @@ body {
   font-size: 1.25rem;
   padding: 0.5rem 1.5rem;
   cursor: pointer;
+}
+
+/* ----- Theme selector (T4.1, T4.2; blue gradient squares in T4.3) ------ */
+
+/*
+ * Three clearly tappable squares, each a different blue gradient. The fills
+ * are permanent, so the active theme is marked with a ring in the current
+ * text colour (reads in both light and dark mode) and a slight scale-up.
+ */
+#theme-select {
+  display: flex;
+  gap: 14px;
+}
+
+.theme-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
+}
+
+.theme-dot[data-theme="default"] {
+  background: #ffffff;
+}
+
+.theme-dot[data-theme="nothing"] {
+  background: #ffd500;
+}
+
+.theme-dot[data-theme="airport"] {
+  background: #ff7a00;
+}
+
+.theme-dot:active {
+  transform: scale(0.94);
+}
+
+.theme-dot.active {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  transform: scale(1.05);
 }
 
 /* ----- Display view -------------------------------------------------- */
@@ -145,6 +213,74 @@ body {
   transform-origin: center center;
 }
 
+/* Nothing OS theme: swap the display font only — colors stay untouched so
+   the embiggened output stays strictly monochrome (T4.1). */
+body[data-theme="nothing"] #display-text {
+  font-family: 'NDOT 45 (inspired by NOTHING)', 'Anton', sans-serif;
+}
+
+/* ----- Airport split-flap theme (T4.2) -------------------------------- */
+
+/*
+ * Forced black board / cream tiles regardless of system light/dark — a
+ * "white board" doesn't read as a departure sign, unlike the Nothing
+ * theme, which stays system-aware.
+ */
+body[data-theme="airport"] #view-display.active {
+  background-color: #0a0a0a;
+  color: #e8e4d8;
+}
+
+/*
+ * Fixed-grid tile layout replaces the single centered text block. Every
+ * character (including spaces) is its own .flap-tile, so wrapping happens
+ * at the character grid edge rather than at word boundaries — matching a
+ * real fixed-column split-flap board.
+ */
+body[data-theme="airport"] #display-text {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  align-content: center;
+  justify-content: center;
+  font-family: 'Archivo Black', sans-serif;
+  text-transform: uppercase;
+}
+
+.flap-tile {
+  position: relative;
+  width: 0.85em;
+  height: 1em;
+  margin: 0.03em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* Slightly lighter than the board background so each tile reads as its
+     own physical unit, with the board showing through the gaps. Overflow
+     stays visible — clipping would cut off wide glyphs (W, M) at this
+     snug tile width. */
+  background-color: #161616;
+  border-radius: 0.06em;
+  flex: none;
+}
+
+.flap-tile-face {
+  color: #e8e4d8;
+  line-height: 1;
+}
+
+/* The seam between a real board's two flap halves. */
+.flap-tile::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 0.5px);
+  height: 1px;
+  background: rgba(0, 0, 0, 0.65);
+}
+
 /* ----- Share button -------------------------------------------------- */
 
 #btn-share {
@@ -193,4 +329,25 @@ body {
 .zoom-in {
   animation: embiggen-zoom-in 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform;
+}
+
+/* ----- Split-flap flip animation (T4.2) ------------------------------- */
+
+/*
+ * A single "flap step" — squash the tile face to near-zero height (the
+ * moment a physical flap is edge-on) and release. JS swaps the character
+ * at the squash midpoint (see flipTile() in app.js) and chains several of
+ * these per tile, staggered tile-to-tile, to fake a mechanical flip with a
+ * flickering run of random characters before landing on the real one.
+ */
+@keyframes flap-flip {
+  0%   { transform: scaleY(1); }
+  45%  { transform: scaleY(0.05); }
+  55%  { transform: scaleY(0.05); }
+  100% { transform: scaleY(1); }
+}
+
+.flap-tile.flapping .flap-tile-face {
+  display: inline-block;
+  animation: flap-flip 90ms linear;
 }
