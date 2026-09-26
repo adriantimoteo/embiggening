@@ -102,40 +102,42 @@ body {
   cursor: pointer;
 }
 
-/* ----- Theme selector (T4.1, T4.2; blue gradient squares in T4.3) ------ */
+/* ----- Theme selector (T4.1, T4.2; squares in T4.3, quieter in T4.7) ---- */
 
 /*
- * Three clearly tappable squares, each a different blue gradient. The fills
- * are permanent, so the active theme is marked with a ring in the current
- * text colour (reads in both light and dark mode) and a slight scale-up.
+ * Three small tappable squares, each tinted to hint at its theme (grey /
+ * Nothing red / board cream). Fills are permanent, so state reads from
+ * brightness: inactive squares are dimmed, the active one is full strength
+ * with a ring in the current text colour (works in light and dark mode).
  */
 #theme-select {
   display: flex;
-  gap: 14px;
+  gap: 12px;
 }
 
 .theme-dot {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
   border: none;
   padding: 0;
   color: inherit;
   cursor: pointer;
+  opacity: 0.4;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease;
 }
 
 .theme-dot[data-theme="default"] {
-  background: #ffffff;
+  background: #9a9a9a;
 }
 
 .theme-dot[data-theme="nothing"] {
-  background: #ffd500;
+  background: #c4373d;
 }
 
 .theme-dot[data-theme="airport"] {
-  background: #ff7a00;
+  background: #d8d3c3;
 }
 
 .theme-dot:active {
@@ -143,6 +145,7 @@ body {
 }
 
 .theme-dot.active {
+  opacity: 1;
   outline: 2px solid currentColor;
   outline-offset: 3px;
   transform: scale(1.05);
