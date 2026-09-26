@@ -49,7 +49,7 @@ let themeDots;
 const THEME_STORAGE_KEY = 'embiggen-theme';
 const THEMES = ['default', 'nothing', 'airport'];
 const NOTHING_FONT = "'NDOT 45 (inspired by NOTHING)'";
-const AIRPORT_FONT = "'Archivo Black'";
+const AIRPORT_FONT = "'Barlow Condensed'";
 
 /** The active theme name. Kept in sync with document.body.dataset.theme. */
 let currentTheme = 'default';
@@ -405,11 +405,18 @@ function randomFlapChar() {
 }
 
 /**
- * Tile geometry in em, mirroring the .flap-tile CSS rules: 0.85em wide and
- * 1em tall plus a 0.03em margin on every side (T4.5).
+ * Tile geometry in em, mirroring the .flap-tile / .flap-tile-face CSS rules:
+ * a 0.72em-wide, 1em-tall tile with a 0.03em margin on every side, and a
+ * glyph scaled 1.2x and nudged up 0.05 (of its own size). Shared by the row
+ * layout and the share image (T4.5, T4.6).
  */
-const FLAP_TILE_W_EM = 0.85 + 0.06;
-const FLAP_TILE_H_EM = 1 + 0.06;
+const FLAP_TILE_WIDTH_EM = 0.72;
+const FLAP_TILE_HEIGHT_EM = 1;
+const FLAP_TILE_MARGIN_EM = 0.03;
+const FLAP_FACE_SCALE = 1.2;
+const FLAP_FACE_NUDGE_EM = -0.05;
+const FLAP_TILE_W_EM = FLAP_TILE_WIDTH_EM + FLAP_TILE_MARGIN_EM * 2;
+const FLAP_TILE_H_EM = FLAP_TILE_HEIGHT_EM + FLAP_TILE_MARGIN_EM * 2;
 
 /**
  * A word is cut mid-word only if that lets tiles be at least this many times
@@ -697,8 +704,8 @@ function drawTextBlock(ctx, vw, vh) {
  * Draw the airport theme's tile grid, reading actual row breaks back out of
  * the live DOM (readFlapRows()) so the image matches the on-screen
  * fixed-column wrap exactly rather than recomputing it independently.
- * Tile geometry (0.85em wide, 1em tall, 0.03em margin) mirrors the
- * .flap-tile CSS rules in style.css.
+ * Tile and glyph geometry (FLAP_* constants) mirrors the .flap-tile /
+ * .flap-tile-face CSS rules in style.css.
  */
 function drawFlapBoard(ctx, vw, vh, fontSizePx) {
   const BOARD_BG = '#0a0a0a';
@@ -711,15 +718,24 @@ function drawFlapBoard(ctx, vw, vh, fontSizePx) {
 
   const rows = readFlapRows();
 
-  const margin   = fontSizePx * 0.03;
-  const tileW    = fontSizePx * 0.85 + margin * 2;
-  const tileH    = fontSizePx * 1 + margin * 2;
+  const margin   = fontSizePx * FLAP_TILE_MARGIN_EM;
+  const tileW    = fontSizePx * FLAP_TILE_W_EM;
+  const tileH    = fontSizePx * FLAP_TILE_H_EM;
   const totalH   = rows.length * tileH;
   const startY   = (vh - totalH) / 2;
 
-  ctx.font = `${fontSizePx}px ${AIRPORT_FONT}`;
+  // The glyph is drawn the way CSS places it: the font's content area
+  // (ascent + descent) centred on the tile, then nudged up. Baseline offset
+  // from the tile centre = (ascent - descent) / 2, plus the nudge.
+  const faceSize = fontSizePx * FLAP_FACE_SCALE;
+  ctx.font = `600 ${faceSize}px ${AIRPORT_FONT}`;
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  const metrics = ctx.measureText('H');
+  const hasFontMetrics = metrics.fontBoundingBoxAscent !== undefined;
+  const baselineOffset = hasFontMetrics
+    ? (metrics.fontBoundingBoxAscent - metrics.fontBoundingBoxDescent) / 2 + FLAP_FACE_NUDGE_EM * faceSize
+    : FLAP_FACE_NUDGE_EM * faceSize;
+  ctx.textBaseline = hasFontMetrics ? 'alphabetic' : 'middle';
 
   rows.forEach((row, r) => {
     const rowW    = row.length * tileW;
@@ -745,7 +761,7 @@ function drawFlapBoard(ctx, vw, vh, fontSizePx) {
 
       if (char !== ' ') {
         ctx.fillStyle = TEXT_COLOUR;
-        ctx.fillText(char, cx, cy);
+        ctx.fillText(char, cx, cy + baselineOffset);
       }
     });
   });
@@ -954,8 +970,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // rather than fallback ones that would resize the text once the font
   // arrives (T4.4, T5.1). Failure is harmless — layout re-runs on
   // fonts.ready as before.
-  [AIRPORT_FONT, NOTHING_FONT, "'Anton'"].forEach((family) => {
-    document.fonts.load(`1em ${family}`).catch(() => {});
+  [`600 1em ${AIRPORT_FONT}`, `1em ${NOTHING_FONT}`, "1em 'Anton'"].forEach((font) => {
+    document.fonts.load(font).catch(() => {});
   });
 
   themeDots.forEach((dot) => {

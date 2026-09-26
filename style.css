@@ -29,14 +29,14 @@
   src: url('fonts/ndot-45-inspired-by-nothing.woff2') format('woff2');
 }
 
-/* ----- Airport split-flap theme: self-hosted Archivo Black (T4.2) ---- */
+/* ----- Airport split-flap theme: self-hosted Barlow Condensed (T4.6) - */
 
 @font-face {
-  font-family: 'Archivo Black';
+  font-family: 'Barlow Condensed';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 600;
   font-display: swap;
-  src: url('fonts/ArchivoBlack-Regular.woff2') format('woff2');
+  src: url('fonts/BarlowCondensed-SemiBold.woff2') format('woff2');
 }
 
 *, *::before, *::after {
@@ -253,7 +253,8 @@ body[data-theme="airport"] #display-text {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: 'Archivo Black', sans-serif;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -265,7 +266,7 @@ body[data-theme="airport"] #display-text {
 
 .flap-tile {
   position: relative;
-  width: 0.85em;
+  width: 0.72em;
   height: 1em;
   margin: 0.03em;
   display: flex;
@@ -281,7 +282,16 @@ body[data-theme="airport"] #display-text {
   flex: none;
 }
 
+/*
+ * Barlow Condensed caps are 0.7em tall, so the face is scaled up to fill the
+ * tile, and nudged up slightly to optically centre caps on the seam (the
+ * font's ascent/descent otherwise sit them a touch low). FLAP_FACE_SCALE and
+ * FLAP_FACE_NUDGE_EM in app.js mirror these two values (T4.6).
+ */
 .flap-tile-face {
+  position: relative;
+  top: -0.05em;
+  font-size: 1.2em;
   color: #e8e4d8;
   line-height: 1;
 }
