@@ -10,6 +10,7 @@
  * T3.3: Mobile UX polish — blur keyboard before entering display mode.
  * T4.1: Nothing OS theme — Ndot font swap via a discreet home-screen toggle.
  * T4.2: Airport split-flap theme — tile grid, flip animation, 3-dot select.
+ * T5.1: Per-line layout for Default/Nothing — word-boundary lines, one size per line.
  */
 
 'use strict';
@@ -99,6 +100,9 @@ function showView(viewToShow) {
  *
  * The element must be visible (in the active view) before calling this so
  * that scrollHeight / scrollWidth measurements are accurate.
+ *
+ * Used by the airport tile grid only; Default/Nothing use the per-line
+ * layout (renderLineLayout, T5.1).
  */
 function fitTextToDisplay() {
   const MIN_SIZE = 1;
@@ -125,6 +129,305 @@ function fitTextToDisplay() {
 
   // Settle on the last known-good (fitting) size.
   displayText.style.fontSize = low + 'px';
+}
+
+// ---------------------------------------------------------------------------
+// Default/Nothing per-line layout (T5.1)
+//
+// Text is broken between words (or groups of words) wherever possible. Each
+// line gets its own font size so it fills the display width. Every grouping
+// of words into lines is scored by the screen area it fills, and the best is
+// used. A word is only split mid-word when the split layout fills at least
+// SPLIT_MIN_GAIN times more area than the best whole-word layout.
+//
+// Everything from here to renderLineLayout() is pure (no DOM): measure(str)
+// returns the width of str in em, so the same layout can drive the live
+// display and the share image.
+// ---------------------------------------------------------------------------
+
+/** Line box height as a multiple of the line's font size. */
+const LINE_HEIGHT = 1.05;
+/** Fraction of the display width a line is sized to fill (small safety margin). */
+const FILL_WIDTH = 0.97;
+/** Fraction of the display height the stack of lines may occupy. */
+const FILL_HEIGHT = 0.94;
+/** No line may be more than this many times the size of the smallest line. */
+const MAX_CONTRAST = 2.5;
+/** Area gain a mid-word-split layout needs over the best whole-word layout. */
+const SPLIT_MIN_GAIN = 1.5;
+/** Minimum characters in each piece of a split word (avoids orphan letters). */
+const MIN_SPLIT_PIECE = 2;
+/** Only the widest few words are considered for splitting (bounds the search). */
+const MAX_SPLITTABLE_WORDS = 3;
+/** Above this many optional line-break positions, use the greedy fallback. */
+const MAX_OPTIONAL_BREAKS = 11;
+
+/** Font-family used for the Default/Nothing display, in CSS/canvas syntax. */
+function displayFontFamily() {
+  return currentTheme === 'nothing' ? `${NOTHING_FONT}, 'Anton', sans-serif` : "'Anton', sans-serif";
+}
+
+/** Build a measure(str) → width-in-em function (cached) for a font family. */
+function makeMeasure(family) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `100px ${family}`;
+  const cache = new Map();
+  return (str) => {
+    let w = cache.get(str);
+    if (w === undefined) {
+      w = ctx.measureText(str).width / 100;
+      cache.set(str, w);
+    }
+    return w;
+  };
+}
+
+/**
+ * Split text into words. Typed newlines become forced line breaks
+ * (breakBefore on the first word of each later line); blank lines are dropped.
+ */
+function parseWords(text) {
+  const words = [];
+  text.split('\n').forEach((line) => {
+    line.split(/\s+/).filter(Boolean).forEach((w, i) => {
+      words.push({ text: w, breakBefore: i === 0 && words.length > 0 });
+    });
+  });
+  return words;
+}
+
+/**
+ * Turn words into line-break tokens, replacing any word that has an entry in
+ * `pieces` with its pieces. Each piece sits on its own line, so a split word
+ * forces a break before it and before whatever follows it.
+ */
+function buildTokens(words, pieces) {
+  const tokens = [];
+  let forceNext = false;
+  words.forEach((word, i) => {
+    if (pieces[i]) {
+      pieces[i].forEach((p) => tokens.push({ text: p, breakBefore: true }));
+      forceNext = true;
+    } else {
+      tokens.push({ text: word.text, breakBefore: word.breakBefore || forceNext });
+      forceNext = false;
+    }
+  });
+  return tokens;
+}
+
+/**
+ * Size a set of lines: each fills the width, capped at MAX_CONTRAST times the
+ * smallest, then all scaled down uniformly if the stack is taller than H.
+ * `area` is the total line-box area covered, used to compare layouts.
+ */
+function sizeLines(lineTexts, W, H, measure) {
+  const usableW = W * FILL_WIDTH;
+  const widths = lineTexts.map((t) => Math.max(measure(t), 0.05));
+  let sizes = widths.map((w) => usableW / w);
+
+  const cap = Math.min(...sizes) * MAX_CONTRAST;
+  sizes = sizes.map((s) => Math.min(s, cap));
+
+  const totalH = sizes.reduce((sum, s) => sum + s * LINE_HEIGHT, 0);
+  const scale = Math.min(1, (H * FILL_HEIGHT) / totalH);
+  sizes = sizes.map((s) => s * scale);
+
+  let area = 0;
+  sizes.forEach((s, i) => { area += (s * widths[i]) * (s * LINE_HEIGHT); });
+
+  return { lines: lineTexts.map((text, i) => ({ text, fontSize: sizes[i] })), area };
+}
+
+/** Try every grouping of tokens into lines; return the best-scoring layout. */
+function exhaustiveGrouping(tokens, W, H, measure) {
+  const optional = [];
+  for (let i = 1; i < tokens.length; i++) {
+    if (!tokens[i].breakBefore) optional.push(i);
+  }
+
+  let best = null;
+  for (let mask = 0; mask < (1 << optional.length); mask++) {
+    const breaks = new Set(optional.filter((_, bit) => mask & (1 << bit)));
+    const lineTexts = [];
+    let current = tokens[0].text;
+    for (let i = 1; i < tokens.length; i++) {
+      if (tokens[i].breakBefore || breaks.has(i)) {
+        lineTexts.push(current);
+        current = tokens[i].text;
+      } else {
+        current += ' ' + tokens[i].text;
+      }
+    }
+    lineTexts.push(current);
+
+    // Strict > keeps the first (fewest-lines) grouping on ties.
+    const result = sizeLines(lineTexts, W, H, measure);
+    if (!best || result.area > best.area) best = result;
+  }
+  return best;
+}
+
+/**
+ * Fallback for long text (too many groupings to try): greedily word-wrap at
+ * the largest uniform size that fits the height without splitting any word,
+ * then size each resulting line to fill the width.
+ */
+function greedyGrouping(tokens, W, H, measure) {
+  const usableW = W * FILL_WIDTH;
+  const maxWordEm = Math.max(...tokens.map((t) => Math.max(measure(t.text), 0.05)));
+
+  function wrap(size) {
+    const lines = [];
+    let current = tokens[0].text;
+    for (let i = 1; i < tokens.length; i++) {
+      const candidate = current + ' ' + tokens[i].text;
+      if (tokens[i].breakBefore || measure(candidate) * size > usableW) {
+        lines.push(current);
+        current = tokens[i].text;
+      } else {
+        current = candidate;
+      }
+    }
+    lines.push(current);
+    return lines;
+  }
+
+  let low = 1;
+  let high = Math.min(500, usableW / maxWordEm);
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (wrap(mid).length * mid * LINE_HEIGHT > H * FILL_HEIGHT) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+  return sizeLines(wrap(low), W, H, measure);
+}
+
+function solveTokens(tokens, W, H, measure) {
+  const optionalBreaks = tokens.filter((t, i) => i > 0 && !t.breakBefore).length;
+  return optionalBreaks <= MAX_OPTIONAL_BREAKS
+    ? exhaustiveGrouping(tokens, W, H, measure)
+    : greedyGrouping(tokens, W, H, measure);
+}
+
+/**
+ * Balanced ways to cut a word into pieces of ≥ MIN_SPLIT_PIECE chars: the best
+ * 2-piece cut and, for long words, the best 3-piece cut (minimising the widest
+ * piece, using cumulative prefix widths).
+ */
+function splitCandidates(word, measure) {
+  const chars = Array.from(word);
+  const len = chars.length;
+  const min = MIN_SPLIT_PIECE;
+  if (len < min * 2) return [];
+
+  const pref = [0];
+  for (let i = 1; i <= len; i++) pref.push(measure(chars.slice(0, i).join('')));
+  const join = (a, b) => chars.slice(a, b).join('');
+
+  const out = [];
+
+  let bestI = -1;
+  let bestW = Infinity;
+  for (let i = min; i <= len - min; i++) {
+    const w = Math.max(pref[i], pref[len] - pref[i]);
+    if (w < bestW) { bestW = w; bestI = i; }
+  }
+  out.push([join(0, bestI), join(bestI, len)]);
+
+  if (len >= min * 3 + 3) {
+    let bi = -1;
+    let bj = -1;
+    bestW = Infinity;
+    for (let i = min; i <= len - 2 * min; i++) {
+      for (let j = i + min; j <= len - min; j++) {
+        const w = Math.max(pref[i], pref[j] - pref[i], pref[len] - pref[j]);
+        if (w < bestW) { bestW = w; bi = i; bj = j; }
+      }
+    }
+    out.push([join(0, bi), join(bi, bj), join(bj, len)]);
+  }
+
+  return out;
+}
+
+/**
+ * Compute the per-line layout for `text` in a W×H area.
+ * @returns {{lines: {text: string, fontSize: number}[], area: number}}
+ */
+function computeLineLayout(text, W, H, measure) {
+  const words = parseWords(text);
+  if (!words.length) return { lines: [], area: 0 };
+
+  const whole = solveTokens(buildTokens(words, []), W, H, measure);
+
+  // Words worth trying to split: the widest few that are long enough.
+  const options = new Map();
+  words
+    .map((word, i) => ({ i, width: measure(word.text) }))
+    .filter(({ i }) => Array.from(words[i].text).length >= MIN_SPLIT_PIECE * 2)
+    .sort((a, b) => b.width - a.width)
+    .slice(0, MAX_SPLITTABLE_WORDS)
+    .forEach(({ i }) => options.set(i, splitCandidates(words[i].text, measure)));
+
+  // Every combination of {whole, each split option} across those words,
+  // except the all-whole one already solved above.
+  const indices = Array.from(options.keys());
+  let variants = [[]];
+  indices.forEach((wordIdx) => {
+    const next = [];
+    variants.forEach((v) => {
+      next.push(v);
+      options.get(wordIdx).forEach((pieces) => next.push([...v, [wordIdx, pieces]]));
+    });
+    variants = next;
+  });
+
+  let bestSplit = null;
+  variants.filter((v) => v.length > 0).forEach((v) => {
+    const pieces = [];
+    v.forEach(([wordIdx, p]) => { pieces[wordIdx] = p; });
+    const tokens = buildTokens(words, pieces);
+    const optionalBreaks = tokens.filter((t, i) => i > 0 && !t.breakBefore).length;
+    if (optionalBreaks > MAX_OPTIONAL_BREAKS) return;
+    const result = exhaustiveGrouping(tokens, W, H, measure);
+    if (!bestSplit || result.area > bestSplit.area) bestSplit = result;
+  });
+
+  return bestSplit && bestSplit.area >= whole.area * SPLIT_MIN_GAIN ? bestSplit : whole;
+}
+
+/** The layout currently on screen; the share image draws exactly this. */
+let currentLayout = null;
+
+/** Lay out and render currentText as one element per line (Default/Nothing). */
+function renderLineLayout() {
+  const W = displayText.clientWidth;
+  const H = displayText.clientHeight;
+  if (!W || !H) return;
+
+  currentLayout = computeLineLayout(currentText, W, H, makeMeasure(displayFontFamily()));
+
+  displayText.replaceChildren(...currentLayout.lines.map((line) => {
+    const el = document.createElement('div');
+    el.className = 'display-line';
+    el.style.fontSize = line.fontSize + 'px';
+    el.style.lineHeight = String(LINE_HEIGHT);
+    el.textContent = line.text;
+    return el;
+  }));
+}
+
+/** Size/lay out the display for the active theme. Display view must be visible. */
+function fitDisplay() {
+  if (currentTheme === 'airport') {
+    fitTextToDisplay();
+  } else {
+    renderLineLayout();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +546,10 @@ function readFlapRows() {
  * Render the current embiggened text to a canvas and return a PNG Blob.
  *
  * The output exactly matches what the user sees on screen:
- *   - Same Anton font at the same px size calculated by fitTextToDisplay()
+ *   - Same font and per-line sizes as the on-screen layout (Default/Nothing:
+ *     currentLayout from T5.1; airport: fitTextToDisplay()'s size)
  *   - Same background and text colours (dark/light mode aware)
- *   - Same manual word-wrap layout, horizontally and vertically centred
+ *   - Same line breaks, horizontally and vertically centred
  *   - Scaled by devicePixelRatio for crisp output on retina/HiDPI screens
  *
  * @returns {Promise<Blob>} A Promise that resolves to a PNG image Blob.
@@ -259,11 +563,6 @@ async function generateShareImage() {
   const vw     = window.innerWidth;
   const vh     = window.innerHeight;
 
-  // Read the exact font-size string that fitTextToDisplay() computed,
-  // e.g. "142px". parseInt extracts the numeric pixel value.
-  const fontSizeStr = displayText.style.fontSize; // e.g. "142px"
-  const fontSizePx  = parseInt(fontSizeStr, 10);
-
   // Create an off-screen canvas at physical pixel dimensions.
   const canvas = document.createElement('canvas');
   canvas.width  = vw * dpr;
@@ -275,9 +574,10 @@ async function generateShareImage() {
   ctx.scale(dpr, dpr);
 
   if (currentTheme === 'airport') {
-    drawFlapBoard(ctx, vw, vh, fontSizePx);
+    // Exact font-size that fitTextToDisplay() computed, e.g. "142px".
+    drawFlapBoard(ctx, vw, vh, parseInt(displayText.style.fontSize, 10));
   } else {
-    drawTextBlock(ctx, vw, vh, fontSizeStr, fontSizePx);
+    drawTextBlock(ctx, vw, vh);
   }
 
   // ---------------------------------------------------------------------------
@@ -296,11 +596,12 @@ async function generateShareImage() {
 }
 
 /**
- * Draw the Default/Nothing themes' single word-wrapped text block. CSS wraps
- * automatically for the live display; canvas does not, so word-wrapping is
- * reproduced manually here to match.
+ * Draw the Default/Nothing themes' per-line layout (currentLayout, T5.1) —
+ * the same lines and font sizes the live display shows. Each line sits in a
+ * line box of size × LINE_HEIGHT, with the text placed the way CSS places it
+ * (font content area centred in the line box), so canvas matches the DOM.
  */
-function drawTextBlock(ctx, vw, vh, fontSizeStr, fontSizePx) {
+function drawTextBlock(ctx, vw, vh) {
   // Determine colours from the system colour-scheme preference.
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const bgColour   = isDark ? '#000000' : '#ffffff';
@@ -309,50 +610,30 @@ function drawTextBlock(ctx, vw, vh, fontSizeStr, fontSizePx) {
   ctx.fillStyle = bgColour;
   ctx.fillRect(0, 0, vw, vh);
 
-  // Configure the font — must match the CSS font stack used in #display-text.
-  const fontFamily = currentTheme === 'nothing' ? NOTHING_FONT : 'Anton';
-  ctx.font = `${fontSizeStr} ${fontFamily}`;
+  if (!currentLayout) return;
 
-  const words      = currentText.split(' ');
-  const lines      = [];
-  let   currentLine = '';
+  const family = displayFontFamily();
+  const totalH = currentLayout.lines.reduce((sum, l) => sum + l.fontSize * LINE_HEIGHT, 0);
+  let top = (vh - totalH) / 2;
 
-  for (const word of words) {
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-    const { width } = ctx.measureText(candidate);
+  ctx.fillStyle = textColour;
+  ctx.textAlign = 'center';
 
-    if (width <= vw) {
-      // Word fits on the current line — append it.
-      currentLine = candidate;
+  currentLayout.lines.forEach((line) => {
+    const lineH = line.fontSize * LINE_HEIGHT;
+    ctx.font = `${line.fontSize}px ${family}`;
+
+    const m = ctx.measureText(line.text);
+    if (m.fontBoundingBoxAscent !== undefined) {
+      const contentH = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(line.text, vw / 2, top + (lineH - contentH) / 2 + m.fontBoundingBoxAscent);
     } else {
-      // Word doesn't fit.
-      if (currentLine) {
-        // Flush the current line and start a new one with this word.
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        // Single word wider than the canvas — place it on its own line.
-        lines.push(word);
-        currentLine = '';
-      }
+      ctx.textBaseline = 'middle';
+      ctx.fillText(line.text, vw / 2, top + lineH / 2);
     }
-  }
 
-  // Push any remaining text as the final line.
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  const lineHeight    = fontSizePx * 1.15;
-  const totalBlockH   = lines.length * lineHeight;
-  const startY        = (vh - totalBlockH) / 2;
-
-  ctx.fillStyle  = textColour;
-  ctx.textAlign  = 'center';
-  ctx.textBaseline = 'top';
-
-  lines.forEach((line, i) => {
-    ctx.fillText(line, vw / 2, startY + i * lineHeight);
+    top += lineH;
   });
 }
 
@@ -536,8 +817,8 @@ function navigateToDisplay() {
   if (currentTheme === 'airport') {
     buildFlapTiles(currentText);
   } else {
+    // Lines are built by fitDisplay() once the view is visible and measurable.
     displayText.innerHTML = '';
-    displayText.textContent = currentText;
   }
   console.log('Embiggen: text passed to display →', currentText);
 
@@ -548,10 +829,10 @@ function navigateToDisplay() {
   showView(viewDisplay);
   acquireWakeLock();
 
-  // fitTextToDisplay() must run before the animation so the font size is
-  // already correct at the start of the scale — the animation only transforms
-  // the already-sized element, it never changes font-size.
-  fitTextToDisplay();
+  // The layout must run before the animation so sizes are already correct at
+  // the start of the scale — the animation only transforms the already-sized
+  // element, it never changes font-size.
+  fitDisplay();
   playEntranceAnimation();
 
   // Re-size once the display font is confirmed loaded (guards against
@@ -560,7 +841,7 @@ function navigateToDisplay() {
   // state matches.
   document.fonts.ready.then(() => {
     if (viewDisplay.classList.contains('active')) {
-      fitTextToDisplay();
+      fitDisplay();
     }
   });
 }
@@ -615,10 +896,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   applyTheme(storedTheme || 'default');
 
-  // Preload the airport font so the first fit uses real font metrics rather
-  // than fallback ones that would resize the board once the font arrives
-  // (T4.4). Failure is harmless — fit just re-runs on fonts.ready as before.
-  document.fonts.load(`1em ${AIRPORT_FONT}`).catch(() => {});
+  // Preload the display fonts so the first layout measures real font metrics
+  // rather than fallback ones that would resize the text once the font
+  // arrives (T4.4, T5.1). Failure is harmless — layout re-runs on
+  // fonts.ready as before.
+  [AIRPORT_FONT, NOTHING_FONT, "'Anton'"].forEach((family) => {
+    document.fonts.load(`1em ${family}`).catch(() => {});
+  });
 
   themeDots.forEach((dot) => {
     dot.addEventListener('click', () => applyTheme(dot.dataset.theme));
@@ -673,7 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleResize() {
     // Only recalculate when the display view is active.
     if (viewDisplay.classList.contains('active')) {
-      fitTextToDisplay();
+      fitDisplay();
     }
   }
 
