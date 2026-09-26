@@ -96,8 +96,10 @@ function showView(viewToShow) {
 // Text is broken between words (or groups of words) wherever possible. Each
 // line gets its own font size so it fills the display width. Every grouping
 // of words into lines is scored by the screen area it fills, and the best is
-// used. A word is only split mid-word when the split layout fills at least
-// SPLIT_MIN_GAIN times more area than the best whole-word layout.
+// used. A word is only split mid-word when the best whole-word layout is
+// unreadably small (smallest line under SPLIT_BELOW_FRACTION of the shorter
+// screen side) AND splitting makes its smallest line at least SPLIT_MIN_GAIN
+// times bigger (T5.2) — so words that fit stay whole, like the airport theme.
 //
 // Everything from here to renderLineLayout() is pure (no DOM): measure(str)
 // returns the width of str in em, so the same layout can drive the live
@@ -112,7 +114,9 @@ const FILL_WIDTH = 0.97;
 const FILL_HEIGHT = 0.94;
 /** No line may be more than this many times the size of the smallest line. */
 const MAX_CONTRAST = 2.5;
-/** Area gain a mid-word-split layout needs over the best whole-word layout. */
+/** Split only if the whole-word layout's smallest line is under this fraction of min(W, H). */
+const SPLIT_BELOW_FRACTION = 0.08;
+/** ...and the split layout's smallest line is at least this many times bigger. */
 const SPLIT_MIN_GAIN = 1.5;
 /** Minimum characters in each piece of a split word (avoids orphan letters). */
 const MIN_SPLIT_PIECE = 2;
@@ -195,7 +199,11 @@ function sizeLines(lineTexts, W, H, measure) {
   let area = 0;
   sizes.forEach((s, i) => { area += (s * widths[i]) * (s * LINE_HEIGHT); });
 
-  return { lines: lineTexts.map((text, i) => ({ text, fontSize: sizes[i] })), area };
+  return {
+    lines: lineTexts.map((text, i) => ({ text, fontSize: sizes[i] })),
+    area,
+    minSize: Math.min(...sizes),
+  };
 }
 
 /** Try every grouping of tokens into lines; return the best-scoring layout. */
@@ -323,6 +331,9 @@ function computeLineLayout(text, W, H, measure) {
 
   const whole = solveTokens(buildTokens(words, []), W, H, measure);
 
+  // Readable as it is — never split (T5.2).
+  if (whole.minSize >= Math.min(W, H) * SPLIT_BELOW_FRACTION) return whole;
+
   // Words worth trying to split: the widest few that are long enough.
   const options = new Map();
   words
@@ -353,10 +364,13 @@ function computeLineLayout(text, W, H, measure) {
     const optionalBreaks = tokens.filter((t, i) => i > 0 && !t.breakBefore).length;
     if (optionalBreaks > MAX_OPTIONAL_BREAKS) return;
     const result = exhaustiveGrouping(tokens, W, H, measure);
+    // Only layouts whose smallest line is much bigger than the whole-word
+    // layout's qualify; among those, the one filling the most area wins.
+    if (result.minSize < whole.minSize * SPLIT_MIN_GAIN) return;
     if (!bestSplit || result.area > bestSplit.area) bestSplit = result;
   });
 
-  return bestSplit && bestSplit.area >= whole.area * SPLIT_MIN_GAIN ? bestSplit : whole;
+  return bestSplit || whole;
 }
 
 /** The layout currently on screen; the share image draws exactly this. */

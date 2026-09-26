@@ -9,7 +9,7 @@
 
 'use strict';
 
-const CACHE_NAME = 'embiggen-v6';
+const CACHE_NAME = 'embiggen-v7';
 
 const ASSETS = [
   './',
