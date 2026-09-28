@@ -561,9 +561,16 @@ function buildFlapRows(rows) {
 /**
  * Run a tile through a few random-character "flicker" steps before landing
  * on its real character. Each step re-triggers the flap-flip CSS animation
- * (remove/reflow/re-add, same trick playZoomAnimation uses) and swaps the
- * face's textContent at the animation's squash midpoint so the character
- * change happens while the tile is edge-on, selling the flip illusion.
+ * (remove/re-add across two rAFs, so the browser commits the removal before
+ * seeing the re-add) and swaps the face's textContent at the animation's
+ * squash midpoint so the character change happens while the tile is
+ * edge-on, selling the flip illusion.
+ *
+ * A synchronous forced-reflow read (tile.offsetWidth) achieves the same
+ * restart but does so with a blocking layout pass; with many tiles all
+ * stepping in the same ~90ms window (the middle of a long board's staggered
+ * animation, where the most tiles are flipping concurrently) that adds up to
+ * visible jank. The double-rAF restart avoids forcing layout at all.
  */
 function flipTile(tile, delay) {
   const face = tile.querySelector('.flap-tile-face');
@@ -576,10 +583,11 @@ function flipTile(tile, delay) {
     const char = isLast ? finalChar : randomFlapChar();
 
     tile.classList.remove('flapping');
-    // Force reflow so the animation restarts cleanly on every step.
-    // eslint-disable-next-line no-unused-expressions
-    tile.offsetWidth; // jshint ignore:line
-    tile.classList.add('flapping');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        tile.classList.add('flapping');
+      });
+    });
 
     setTimeout(() => {
       face.textContent = char === ' ' ? '' : char;
