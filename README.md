@@ -8,22 +8,30 @@ Simpsons word.
 ## How it works
 
 1. **Open** — a text box and an "Embiggen" button.
-2. **Embiggen** — a zoom animation grows the text to fill the screen.
-3. **Display mode** — text wraps and scales to the largest font that fits;
+2. **Pick a display theme** — two swatches below the button switch between
+   **default** (plain wrapped text) and **airport** (a split-flap board:
+   caps-only tiles that flip into place, like an airport departures sign).
+3. **Embiggen** — grows the text to fill the screen (a zoom animation for
+   default, a staggered tile-flip for airport).
+4. **Display mode** — text wraps and scales to the largest font that fits;
    the screen stays awake (Screen Wake Lock).
-4. **Tap** anywhere to replay the zoom animation.
-5. **Share button** renders the display to a canvas image and opens the
+5. **Tap** anywhere to replay the entrance animation.
+6. **Share button** renders the display to a canvas image and opens the
    native share sheet (Web Share API, with a download fallback).
-6. **Back** returns to the text box and clears it.
+7. **Back** returns to the text box and clears it.
 
-Theme follows the system dark/light preference. Text case is preserved
-exactly (no forced uppercase).
+Light/dark colors follow the system preference. Text case is preserved
+exactly (no forced uppercase) in the default theme; the airport theme
+uppercases tiles for display only, since split-flap boards are
+conventionally caps-only.
 
 ## Tech stack
 
 Vanilla HTML/CSS/JS — no framework, no build step, no npm dependencies
-for the web app itself. The display font is [Anton](https://fonts.google.com/specimen/Anton),
-self-hosted as a `.woff2` so it works offline.
+for the web app itself. Display fonts are self-hosted as `.woff2` so they
+work offline: [Anton](https://fonts.google.com/specimen/Anton) for the
+default theme, [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed)
+(SemiBold) for the airport split-flap tiles.
 
 The web app is also packaged as a native Android app via
 [Capacitor](https://capacitorjs.com/), living in `app/`.
@@ -36,7 +44,7 @@ style.css            Styling, theming, zoom animation
 app.js                Navigation, font-fit sizing, wake lock, canvas share
 sw.js                  Service worker — offline asset caching
 manifest.json     Web app manifest (installable PWA)
-fonts/                  Self-hosted Anton .woff2
+fonts/                  Self-hosted Anton + Barlow Condensed .woff2
 icons/                   PWA icons
 
 app/                     Capacitor Android wrapper
@@ -78,3 +86,6 @@ spec and per-ticket implementation notes:
   generation, share
 - **Phase 3 — PWA Polish:** manifest/icons, service worker, mobile UX
 - **Android App:** Capacitor project setup, native build, gesture fixes
+- **Phase 4 — Themes:** default/airport theme selector; airport split-flap
+  board (word-boundary tile wrapping, flip animation, Barlow Condensed);
+  per-line font sizing for the default theme
