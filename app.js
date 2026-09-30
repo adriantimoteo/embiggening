@@ -641,8 +641,14 @@ function readFlapRows() {
  */
 async function generateShareImage() {
   // Wait for fonts to be fully loaded before drawing, so measureText() and
-  // the actual glyph outlines are both based on the real font metrics.
-  await document.fonts.ready;
+  // the actual glyph outlines are both based on the real font metrics. Skip
+  // the await entirely when already loaded (the common case, since display
+  // mode already rendered this font) — every extra tick here risks losing
+  // the user-activation that triggerShare() needs for navigator.share() on
+  // mobile browsers.
+  if (document.fonts.status !== 'loaded') {
+    await document.fonts.ready;
+  }
 
   const dpr    = window.devicePixelRatio || 1;
   const vw     = window.innerWidth;
@@ -666,18 +672,28 @@ async function generateShareImage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Output — convert the canvas to a PNG Blob via a Promise wrapper.
+  // Output — convert the canvas to a PNG Blob synchronously via toDataURL().
+  // canvas.toBlob() defers its callback to a later task, which on mobile
+  // Safari/Chrome is often enough to lose the user-activation that
+  // navigator.share() requires; toDataURL() has no such gap.
   // ---------------------------------------------------------------------------
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error('canvas.toBlob() returned null'));
-      }
-    }, 'image/png');
-  });
+  return dataUrlToBlob(canvas.toDataURL('image/png'));
+}
+
+/**
+ * Synchronously decode a data: URL into a Blob (no fetch/toBlob async gap —
+ * see generateShareImage()'s comment on why that matters for share()).
+ * @param {string} dataUrl
+ * @returns {Blob}
+ */
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
 }
 
 /**
@@ -804,9 +820,26 @@ async function triggerShare() {
   let blob;
   try {
     blob = await generateShareImage();
-  } catch (_err) {
+  } catch (err) {
     // Image generation failed — nothing useful to share.
+    console.error('Share: image generation failed', err);
     return;
+  }
+
+  // Inside the Capacitor Android app, neither the Web Share API nor a
+  // blob: <a download> click is reliable: navigator.share() intent
+  // resolution can silently fail in the WebView, and blob downloads need a
+  // native DownloadListener that this app doesn't (and, for blob: URLs,
+  // realistically can't) register. Route through Capacitor's own
+  // Filesystem/Share plugins instead, which hand the OS a real file URI.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    try {
+      await shareNative(blob);
+      return;
+    } catch (err) {
+      console.error('Share: native Capacitor share failed', err);
+      return;
+    }
   }
 
   const file = new File([blob], 'embiggen.png', { type: 'image/png' });
@@ -814,22 +847,61 @@ async function triggerShare() {
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
+      return;
     } catch (err) {
       if (err.name === 'AbortError') {
         // User dismissed the share sheet — expected, ignore silently.
         return;
       }
-      // Any other share error — fail silently.
+      // Any other share error (e.g. lost user-activation) — fall through to
+      // the download fallback below instead of failing silently.
+      console.error('Share: navigator.share() failed, falling back to download', err);
     }
-  } else {
-    // Web Share API unavailable or file sharing not supported — download fallback.
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'embiggen.png';
-    a.click();
-    URL.revokeObjectURL(url);
   }
+
+  // Web Share API unavailable, file sharing not supported, or share() threw
+  // above — download fallback.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'embiggen.png';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Share a PNG blob via Capacitor's Filesystem + Share plugins: write it to
+ * the app's cache directory, then hand the resulting file URI to the native
+ * Android share sheet. Only called when running inside the native app
+ * (window.Capacitor.isNativePlatform()).
+ * @param {Blob} blob
+ */
+async function shareNative(blob) {
+  const { Filesystem, Share } = window.Capacitor.Plugins;
+  const base64 = await blobToBase64(blob);
+  const fileName = `embiggen-${Date.now()}.png`;
+
+  const { uri } = await Filesystem.writeFile({
+    path: fileName,
+    data: base64,
+    directory: 'CACHE',
+  });
+
+  await Share.share({ url: uri });
+}
+
+/**
+ * @param {Blob} blob
+ * @returns {Promise<string>} The blob's base64-encoded contents (no
+ *   "data:...;base64," prefix), as Filesystem.writeFile() expects.
+ */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 // ---------------------------------------------------------------------------
